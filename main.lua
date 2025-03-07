@@ -39,9 +39,6 @@ local PlayerSection = PlayerTab:CreateSection("Employer Status")
 
 local Player = game.Players.LocalPlayer
 local SanityLabel = PlayerTab:CreateLabel("Sanity: ??")
-    -- Atualizar Sanidade do Jogador
-    SanityLabel:Set("Sanidade: " .. (Player:GetAttribute("Energy") and tostring(round(Player:GetAttribute("Energy"))) or "??"))
-    -- Atualizar velocidade do player
 local SpeedInput = PlayerTab:CreateInput({
    Name = "Change Speed",
    PlaceholderText = "Input Speed...",
@@ -56,6 +53,8 @@ local SpeedInput = PlayerTab:CreateInput({
        end
    end
 })
+    -- Atualizar Sanidade do Jogador
+    SanityLabel:Set("Sanidade: " .. (Player:GetAttribute("Energy") and tostring(round(Player:GetAttribute("Energy"))) or "??"))
 
 -- Criar aba de Exploit
 local ExploitTab = Window:CreateTab("SpyTools", 4483362458)
