@@ -53,20 +53,19 @@ local SpeedInput = PlayerTab:CreateInput({
        end
    end
 })
-    -- Atualizar Sanidade do Jogador
-    SanityLabel:Set("Sanidade: " .. (Player:GetAttribute("Energy") and tostring(round(Player:GetAttribute("Energy"))) or "??"))
 
 -- Criar aba de Exploit
-local ExploitTab = Window:CreateTab("SpyTools", 4483362458)
+local ExploitTab = Window:CreateTab("Exploit", 4483362458)
 local ExploitSection = ExploitTab:CreateSection("Hacks")
-local ghostAlwaysVisible = true
-local ghostESP = true
+
+local ghostAlwaysVisible = false
+local ghostESP = false
 local isNoClipEnabled = false -- Variável para controlar o estado do NoClip
 
 -- Toggle: Fantasma sempre visível
 local AlwaysVisibleToggle = ExploitTab:CreateToggle({
-    Name = "Spectral Glasses",
-    CurrentValue = true,
+    Name = "Fantasma Sempre Visível",
+    CurrentValue = false,
     Callback = function(state)
         ghostAlwaysVisible = state
         local ghost = game.Workspace:FindFirstChild("Ghost")
@@ -87,8 +86,8 @@ local AlwaysVisibleToggle = ExploitTab:CreateToggle({
 
 -- Toggle: ESP do Fantasma
 local ESPToggle = ExploitTab:CreateToggle({
-    Name = "Delight Entities",
-    CurrentValue = true,
+    Name = "ESP Fantasma",
+    CurrentValue = false,
     Callback = function(state)
         ghostESP = state
         local ghost = game.Workspace:FindFirstChild("Ghost")
@@ -112,14 +111,6 @@ local ESPToggle = ExploitTab:CreateToggle({
     end
 })
 
--- Função para alternar o estado do NoClip
-local NoClipToggle = ExploitTab:CreateToggle({
-    Name = "WalkThrough",
-    CurrentValue = false,
-    Callback = function(state)
-        toggleNoClip(state)  -- Chama a função toggleNoClip para ativar ou desativar o NoClip
-    end
-})
 -- Função para controlar o NoClip sem afetar o movimento do personagem
 local function onRenderStepped()
     local character = game.Workspace:FindFirstChild(Player.Name)
@@ -145,8 +136,10 @@ local function onRenderStepped()
         end
     end
 end
+
 -- Conectar RenderStepped apenas quando o NoClip estiver ativado
 local renderConnection = nil
+
 local function toggleNoClip(state)
     isNoClipEnabled = state
 
@@ -164,6 +157,15 @@ local function toggleNoClip(state)
     end
 end
 
+-- Exemplo de função para alternar o estado do NoClip
+local NoClipToggle = ExploitTab:CreateToggle({
+    Name = "NoClip",
+    CurrentValue = false,
+    Callback = function(state)
+        toggleNoClip(state)  -- Chama a função toggleNoClip para ativar ou desativar o NoClip
+    end
+})
+
 -- Variáveis para notificações únicas
 local notifiedPhantom = false
 local notifiedUmbra = false
@@ -174,9 +176,9 @@ local lastHuntState = false
 -- Função para mostrar notificações
 local function notify(message)
     Rayfield:Notify({
-        Title = "Anomaly Identified",
+        Title = "Ghost Info",
         Content = message,
-        Duration = 2,
+        Duration = 5,
         Image = 0,
         Actions = {
             Ignore = {
@@ -233,6 +235,7 @@ game:GetService("RunService").RenderStepped:Connect(function()
                 notify("Ghost: Oni")
                 notifiedOni = true
             end
+
             lastSpeed = speed
         else
             SpeedLabel:Set("Velocidade: ??")
@@ -240,7 +243,8 @@ game:GetService("RunService").RenderStepped:Connect(function()
 
         -- Atualizar GhostFootsteps e GhostOrb
         local ghostFootsteps = ghost:FindFirstChild("GhostFootsteps") ~= nil
-        FootstepsLabel:Set("GhostFootsteps: " .. (ghostFootsteps and "Detected" or "Inexistent"))
+        FootstepsLabel:Set("GhostFootsteps: " .. (ghostFootsteps and "SIM" or "NÃO"))
+
         -- Notificação do Umbra
         if not ghostFootsteps and not notifiedUmbra then
             notify("Ghost: Umbra")
@@ -248,15 +252,18 @@ game:GetService("RunService").RenderStepped:Connect(function()
         end
 
         local ghostOrb = game.Workspace:FindFirstChild("GhostOrb")
-        GhostOrbLabel:Set("GhostOrb: " .. (ghostOrb and "Detected" or "Inexistent"))
+        GhostOrbLabel:Set("GhostOrb: " .. (ghostOrb and "SIM" or "NÃO"))
 
         -- Notificação de Hunting
         local isHunting = ghost:GetAttribute("Hunting")
         if isHunting and not lastHuntState then
-            notify("Anomaly is hunting")
+            notify("Ghost Hunting")
         end
         lastHuntState = isHunting
     end
+
+    -- Atualizar Sanidade do Jogador
+    SanityLabel:Set("Sanidade: " .. (Player:GetAttribute("Energy") and tostring(round(Player:GetAttribute("Energy"))) or "??"))
 
     -- Encontrar a sala mais fria
     local roomsFolder = game.Workspace:FindFirstChild("Map") and game.Workspace.Map:FindFirstChild("Rooms")
