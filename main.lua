@@ -1,14 +1,14 @@
     debugX = false
 
--- Carregar Rayfiel
+-- Carregar Rayfield
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 -- Criar a Janela Principal
 local Window = Rayfield:CreateWindow({
-   Name = "Ghost Info",
+   Name = "Demonology Spy Solutions LLC",
    Icon = 0, 
-   LoadingTitle = "Carregando Interface...",
-   LoadingSubtitle = "by Leloyd Bom de Guerra",
+   LoadingTitle = "Hacking evidences and files...",
+   LoadingSubtitle = "by Demonology Spy",
    Theme = "Default",
    DisableRayfieldPrompts = false,
    DisableBuildWarnings = false,
@@ -17,30 +17,31 @@ local Window = Rayfield:CreateWindow({
    }
 })
 
--- Criar aba para informações do fantasma
-local GhostTab = Window:CreateTab("Informações", 4483362458) 
-local GhostSection = GhostTab:CreateSection("Info:")
 
-local GhostLocationLabel = GhostTab:CreateLabel("Ghost Location: ??")
-local GhostFavoriteLabel = GhostTab:CreateLabel("Ghost Favorite Room: ??")
-local ColdestRoomLabel = GhostTab:CreateLabel("Coldest Room: ?? (??°C)")
-local GhostVelaLabel = GhostTab:CreateLabel("Vela Azul: Não Detectada")
-
-local GhostStatsSection = GhostTab:CreateSection("Status do Fantasma")
+-- Criar aba para status do fantamsa
+local GhostTab = Window:CreateTab("Ghost", 4483362458) 
+local GhostStatsSection = GhostTab:CreateSection("Ghost Status")
 local SpeedLabel = GhostTab:CreateLabel("Velocidade: ??")
 local FootstepsLabel = GhostTab:CreateLabel("GhostFootsteps: ??")
 local GhostOrbLabel = GhostTab:CreateLabel("GhostOrb: ??")
 
+-- Criar aba para informações do fantasma
+local GhostTab = Window:CreateTab("Informations", 4483362458) 
+local GhostSection = GhostTab:CreateSection("Rooms")
+local GhostLocationLabel = GhostTab:CreateLabel("Ghost Location: ??")
+local GhostFavoriteLabel = GhostTab:CreateLabel("Ghost Favorite Room: ??")
+local ColdestRoomLabel = GhostTab:CreateLabel("Coldest Room: ?? (??°C)")
+local GhostVelaLabel = GhostTab:CreateLabel("Spirit Candle: Inexistent")
+
 -- Criar aba para informações do jogador
 local PlayerTab = Window:CreateTab("Player", 4483362458)
-local PlayerSection = PlayerTab:CreateSection("Status do Jogador")
+local PlayerSection = PlayerTab:CreateSection("Employer Status")
 
 local Player = game.Players.LocalPlayer
-local SanityLabel = PlayerTab:CreateLabel("Sanidade: ??")
-
+local SanityLabel = PlayerTab:CreateLabel("Sanity: ??")
 local SpeedInput = PlayerTab:CreateInput({
-   Name = "Definir Velocidade",
-   PlaceholderText = "Digite um valor...",
+   Name = "Change Speed",
+   PlaceholderText = "Input Speed...",
    RemoveTextAfterFocusLost = false,
    Callback = function(Value)
        local Character = game.Workspace:FindFirstChild(Player.Name)
@@ -54,17 +55,16 @@ local SpeedInput = PlayerTab:CreateInput({
 })
 
 -- Criar aba de Exploit
-local ExploitTab = Window:CreateTab("Exploit", 4483362458)
+local ExploitTab = Window:CreateTab("SpyTools", 4483362458)
 local ExploitSection = ExploitTab:CreateSection("Hacks")
-
-local ghostAlwaysVisible = false
-local ghostESP = false
+local ghostAlwaysVisible = true
+local ghostESP = true
 local isNoClipEnabled = false -- Variável para controlar o estado do NoClip
 
 -- Toggle: Fantasma sempre visível
 local AlwaysVisibleToggle = ExploitTab:CreateToggle({
-    Name = "Fantasma Sempre Visível",
-    CurrentValue = false,
+    Name = "Spectral Glasses",
+    CurrentValue = true,
     Callback = function(state)
         ghostAlwaysVisible = state
         local ghost = game.Workspace:FindFirstChild("Ghost")
@@ -85,8 +85,8 @@ local AlwaysVisibleToggle = ExploitTab:CreateToggle({
 
 -- Toggle: ESP do Fantasma
 local ESPToggle = ExploitTab:CreateToggle({
-    Name = "ESP Fantasma",
-    CurrentValue = false,
+    Name = "Delight Entities",
+    CurrentValue = true,
     Callback = function(state)
         ghostESP = state
         local ghost = game.Workspace:FindFirstChild("Ghost")
@@ -110,6 +110,14 @@ local ESPToggle = ExploitTab:CreateToggle({
     end
 })
 
+-- Função para alternar o estado do NoClip
+local NoClipToggle = ExploitTab:CreateToggle({
+    Name = "WalkThrough",
+    CurrentValue = false,
+    Callback = function(state)
+        toggleNoClip(state)  -- Chama a função toggleNoClip para ativar ou desativar o NoClip
+    end
+})
 -- Função para controlar o NoClip sem afetar o movimento do personagem
 local function onRenderStepped()
     local character = game.Workspace:FindFirstChild(Player.Name)
@@ -135,10 +143,8 @@ local function onRenderStepped()
         end
     end
 end
-
 -- Conectar RenderStepped apenas quando o NoClip estiver ativado
 local renderConnection = nil
-
 local function toggleNoClip(state)
     isNoClipEnabled = state
 
@@ -156,15 +162,6 @@ local function toggleNoClip(state)
     end
 end
 
--- Exemplo de função para alternar o estado do NoClip
-local NoClipToggle = ExploitTab:CreateToggle({
-    Name = "NoClip",
-    CurrentValue = false,
-    Callback = function(state)
-        toggleNoClip(state)  -- Chama a função toggleNoClip para ativar ou desativar o NoClip
-    end
-})
-
 -- Variáveis para notificações únicas
 local notifiedPhantom = false
 local notifiedUmbra = false
@@ -175,9 +172,9 @@ local lastHuntState = false
 -- Função para mostrar notificações
 local function notify(message)
     Rayfield:Notify({
-        Title = "Ghost Info",
+        Title = "Anomaly Identified",
         Content = message,
-        Duration = 5,
+        Duration = 2,
         Image = 0,
         Actions = {
             Ignore = {
@@ -192,6 +189,10 @@ end
 local function round(num)
     return math.floor(num * 100 + 0.5) / 100
 end
+
+    -- Atualizar Sanidade do Jogador
+    SanityLabel:Set("Sanidade: " .. (Player:GetAttribute("Energy") and tostring(round(Player:GetAttribute("Energy"))) or "??"))
+
 
 -- Função para verificar velas azuis
 local function checkBlueCandles()
@@ -234,7 +235,6 @@ game:GetService("RunService").RenderStepped:Connect(function()
                 notify("Ghost: Oni")
                 notifiedOni = true
             end
-
             lastSpeed = speed
         else
             SpeedLabel:Set("Velocidade: ??")
@@ -242,8 +242,7 @@ game:GetService("RunService").RenderStepped:Connect(function()
 
         -- Atualizar GhostFootsteps e GhostOrb
         local ghostFootsteps = ghost:FindFirstChild("GhostFootsteps") ~= nil
-        FootstepsLabel:Set("GhostFootsteps: " .. (ghostFootsteps and "SIM" or "NÃO"))
-
+        FootstepsLabel:Set("GhostFootsteps: " .. (ghostFootsteps and "Detected" or "Inexistent"))
         -- Notificação do Umbra
         if not ghostFootsteps and not notifiedUmbra then
             notify("Ghost: Umbra")
@@ -251,18 +250,15 @@ game:GetService("RunService").RenderStepped:Connect(function()
         end
 
         local ghostOrb = game.Workspace:FindFirstChild("GhostOrb")
-        GhostOrbLabel:Set("GhostOrb: " .. (ghostOrb and "SIM" or "NÃO"))
+        GhostOrbLabel:Set("GhostOrb: " .. (ghostOrb and "Detected" or "Inexistent"))
 
         -- Notificação de Hunting
         local isHunting = ghost:GetAttribute("Hunting")
         if isHunting and not lastHuntState then
-            notify("Ghost Hunting")
+            notify("Anomaly is hunting")
         end
         lastHuntState = isHunting
     end
-
-    -- Atualizar Sanidade do Jogador
-    SanityLabel:Set("Sanidade: " .. (Player:GetAttribute("Energy") and tostring(round(Player:GetAttribute("Energy"))) or "??"))
 
     -- Encontrar a sala mais fria
     local roomsFolder = game.Workspace:FindFirstChild("Map") and game.Workspace.Map:FindFirstChild("Rooms")
