@@ -5,10 +5,10 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 -- Criar a Janela Principal
 local Window = Rayfield:CreateWindow({
-   Name = "Demonology Spy Solutions LLC",
+   Name = "Ghost Info",
    Icon = 0, 
-   LoadingTitle = "Hacking evidences and files...",
-   LoadingSubtitle = "by Demonology Spy",
+   LoadingTitle = "Carregando Interface...",
+   LoadingSubtitle = "by Leloyd Bom de Guerra",
    Theme = "Default",
    DisableRayfieldPrompts = false,
    DisableBuildWarnings = false,
@@ -17,31 +17,30 @@ local Window = Rayfield:CreateWindow({
    }
 })
 
+-- Criar aba para informações do fantasma
+local GhostTab = Window:CreateTab("Informações", 4483362458) 
+local GhostSection = GhostTab:CreateSection("Info:")
 
--- Criar aba para status do fantamsa
-local GhostTab = Window:CreateTab("Ghost", 4483362458) 
-local GhostStatsSection = GhostTab:CreateSection("Ghost Status")
+local GhostLocationLabel = GhostTab:CreateLabel("Ghost Location: ??")
+local GhostFavoriteLabel = GhostTab:CreateLabel("Ghost Favorite Room: ??")
+local ColdestRoomLabel = GhostTab:CreateLabel("Coldest Room: ?? (??°C)")
+local GhostVelaLabel = GhostTab:CreateLabel("Vela Azul: Não Detectada")
+
+local GhostStatsSection = GhostTab:CreateSection("Status do Fantasma")
 local SpeedLabel = GhostTab:CreateLabel("Velocidade: ??")
 local FootstepsLabel = GhostTab:CreateLabel("GhostFootsteps: ??")
 local GhostOrbLabel = GhostTab:CreateLabel("GhostOrb: ??")
 
--- Criar aba para informações do fantasma
-local GhostTab = Window:CreateTab("Informations", 4483362458) 
-local GhostSection = GhostTab:CreateSection("Rooms")
-local GhostLocationLabel = GhostTab:CreateLabel("Ghost Location: ??")
-local GhostFavoriteLabel = GhostTab:CreateLabel("Ghost Favorite Room: ??")
-local ColdestRoomLabel = GhostTab:CreateLabel("Coldest Room: ?? (??°C)")
-local GhostVelaLabel = GhostTab:CreateLabel("Spirit Candle: Inexistent")
-
 -- Criar aba para informações do jogador
 local PlayerTab = Window:CreateTab("Player", 4483362458)
-local PlayerSection = PlayerTab:CreateSection("Employer Status")
+local PlayerSection = PlayerTab:CreateSection("Status do Jogador")
 
 local Player = game.Players.LocalPlayer
-local SanityLabel = PlayerTab:CreateLabel("Sanity: ??")
+local SanityLabel = PlayerTab:CreateLabel("Sanidade: ??")
+
 local SpeedInput = PlayerTab:CreateInput({
-   Name = "Change Speed",
-   PlaceholderText = "Input Speed...",
+   Name = "Definir Velocidade",
+   PlaceholderText = "Digite um valor...",
    RemoveTextAfterFocusLost = false,
    Callback = function(Value)
        local Character = game.Workspace:FindFirstChild(Player.Name)
