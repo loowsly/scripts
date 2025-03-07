@@ -1,6 +1,6 @@
     debugX = false
 
--- Carregar Rayfield
+-- Carregar Rayfiel
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 -- Criar a Janela Principal
