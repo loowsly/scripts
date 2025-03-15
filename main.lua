@@ -1,4 +1,4 @@
-    debugX = false
+debugX = false
 
 -- Carregar Rayfield
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -8,10 +8,10 @@ local Window = Rayfield:CreateWindow({
    Name = "Demonology Spy Solutions LLC",
    Icon = 0, 
    LoadingTitle = "Hacking evidences and files...",
-   LoadingSubtitle = "by Demonology Spy",
+   LoadingSubtitle = "by ExpX Spy",
    Theme = "Default",
    DisableRayfieldPrompts = false,
-   DisableBuildWarnings = false,
+   DisableBuildWarnings = true,
    ConfigurationSaving = {
       Enabled = false
    }
@@ -19,14 +19,14 @@ local Window = Rayfield:CreateWindow({
 
 
 -- Criar aba para status do fantamsa
-local GhostTab = Window:CreateTab("Ghost", 4483362458) 
+local GhostTab = Window:CreateTab("Ghost", "ghost") 
 local GhostStatsSection = GhostTab:CreateSection("Ghost Status")
 local SpeedLabel = GhostTab:CreateLabel("Velocidade: ??")
 local FootstepsLabel = GhostTab:CreateLabel("GhostFootsteps: ??")
 local GhostOrbLabel = GhostTab:CreateLabel("GhostOrb: ??")
 
 -- Criar aba para informações do fantasma
-local GhostTab = Window:CreateTab("Informations", 4483362458) 
+local GhostTab = Window:CreateTab("Informations", "info") 
 local GhostSection = GhostTab:CreateSection("Rooms")
 local GhostLocationLabel = GhostTab:CreateLabel("Ghost Location: ??")
 local GhostFavoriteLabel = GhostTab:CreateLabel("Ghost Favorite Room: ??")
@@ -34,7 +34,7 @@ local ColdestRoomLabel = GhostTab:CreateLabel("Coldest Room: ?? (??°C)")
 local GhostVelaLabel = GhostTab:CreateLabel("Spirit Candle: Inexistent")
 
 -- Criar aba para informações do jogador
-local PlayerTab = Window:CreateTab("Player", 4483362458)
+local PlayerTab = Window:CreateTab("Player", "file-user")
 local PlayerSection = PlayerTab:CreateSection("Employer Status")
 
 local Player = game.Players.LocalPlayer
@@ -55,7 +55,7 @@ local SpeedInput = PlayerTab:CreateInput({
 })
 
 -- Criar aba de Exploit
-local ExploitTab = Window:CreateTab("SpyTools", 4483362458)
+local ExploitTab = Window:CreateTab("SpyTools", "shield-alert")
 local ExploitSection = ExploitTab:CreateSection("Hacks")
 local ghostAlwaysVisible = true
 local ghostESP = true
