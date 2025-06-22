@@ -13,7 +13,7 @@ javascript: (() => {
 
   const SCRIPT_VERSION = "1.0.0-interactive"
   const CONFIG = {
-    API_ENDPOINT: "https://v0-aiml-api-setup.vercel.app/api/chat",
+    API_ENDPOINT: "https://v0-aiml-api-setup.vercel.app/api/chat-multi",
     MODELS: [
       { id: "gpt-4o-mini", name: "GPT-4O Mini (Rápido/Visão)", hasVision: true, color: "#00D0FF" },
       { id: "gemini-1.5-flash", name: "Gemini 1.5 (Geral/Visão)", hasVision: true, color: "#A070FF" },
