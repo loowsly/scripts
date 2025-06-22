@@ -11,7 +11,7 @@ javascript: (function() {
     
     const SCRIPT_VERSION = '12.1.0-notif-fix';
     const CONFIG = {
-        API_ENDPOINT: 'https://v0-openrouter-ai-endpoint.vercel.app/b',
+        API_ENDPOINT: 'https://v0-openrouter-ai-endpoint.vercel.app/chat-selector',
         MODELS: [
             { id: "gemini-1.5-flash", name: "Gemini 1.5 (Geral/Visão)" },
             { id: "meta-llama/Llama-3.3-70B-Instruct-Turbo", name: "Llama 3.3 (Humanas)" },
