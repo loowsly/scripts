@@ -1,8 +1,8 @@
 javascript: (() => {
-  const SCRIPT_ID = "simple-ai-assistant"
+  const CHAT_ID = "ai-chat-sidebar"
 
   // Remove se já existe
-  const existing = document.getElementById(SCRIPT_ID)
+  const existing = document.getElementById(CHAT_ID)
   if (existing) {
     existing.remove()
     return
@@ -11,388 +11,342 @@ javascript: (() => {
   const CONFIG = {
     API_URL: "https://v0-openrouter-ai-endpoint.vercel.app/api/chat",
     MODELS: [
-      { id: "gpt-4o-mini", name: "GPT-4O Mini (Rápido)" },
-      { id: "gpt-4o", name: "GPT-4O (Inteligente)" },
-      { id: "gemini-flash", name: "Gemini Flash (Visão)" },
-      { id: "claude-sonnet", name: "Claude Sonnet (Analítico)" },
-      { id: "deepseek", name: "DeepSeek (Eficiente)" },
-    ],
-    LANGUAGES: [
-      { id: "pt", name: "🇧🇷 Português" },
-      { id: "en", name: "🇺🇸 English" },
-      { id: "es", name: "🇪🇸 Español" },
+      { id: "gpt-4o-mini", name: "GPT-4O Mini" },
+      { id: "gpt-4o", name: "GPT-4O" },
+      { id: "gemini-flash", name: "Gemini Flash" },
+      { id: "claude-sonnet", name: "Claude Sonnet" },
     ],
   }
 
   const STATE = {
     currentModel: 0,
-    currentLanguage: 0,
+    messages: [],
     isProcessing: false,
-    lastAnswer: null,
   }
 
-  // Função para extrair conteúdo da página
-  function extractContent() {
-    const images = []
-    const textContent = []
-
-    // Procurar por container da questão
-    const containers = document.querySelectorAll(
-      'div[class*="question"], div[class*="questao"], .MuiPaper-root, article, main, section',
-    )
-    let mainContainer = null
-
-    for (const container of containers) {
-      if (container.querySelector('input[type="radio"], div[role="radiogroup"]')) {
-        mainContainer = container
-        break
-      }
-    }
-
-    if (!mainContainer) {
-      mainContainer = document.body
-    }
-
-    console.log("📋 Container encontrado:", mainContainer.tagName, mainContainer.className)
-
-    // Extrair imagens
-    mainContainer.querySelectorAll("img").forEach((img) => {
-      if (img.src && !img.src.includes("icon") && !img.src.includes("logo") && !img.src.includes("avatar")) {
-        images.push(img.src)
-        console.log("🖼️ Imagem encontrada:", img.src)
-      }
-    })
-
-    // Extrair texto de forma mais robusta
-    const walker = document.createTreeWalker(mainContainer, NodeFilter.SHOW_TEXT, {
-      acceptNode: (node) => {
-        const parent = node.parentElement
-        if (!parent) return NodeFilter.FILTER_REJECT
-
-        const style = window.getComputedStyle(parent)
-        if (style.display === "none" || style.visibility === "hidden") {
-          return NodeFilter.FILTER_REJECT
-        }
-
-        // Ignorar scripts e estilos
-        if (parent.tagName === "SCRIPT" || parent.tagName === "STYLE") {
-          return NodeFilter.FILTER_REJECT
-        }
-
-        return node.textContent.trim().length > 0 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT
-      },
-    })
-
-    let node
-    while ((node = walker.nextNode())) {
-      const text = node.textContent.trim()
-      if (text.length > 2) {
-        textContent.push(text)
-      }
-    }
-
-    const finalText = textContent.join(" ").replace(/\s+/g, " ").trim()
-    console.log("📝 Texto extraído:", finalText.substring(0, 200) + "...")
-
-    return {
-      text: finalText,
-      images: images,
-    }
-  }
-
-  // Função para enviar para API
-  async function sendToAI(content) {
-    const model = CONFIG.MODELS[STATE.currentModel]
-    const language = CONFIG.LANGUAGES[STATE.currentLanguage]
-
-    console.log("🚀 Enviando para API:", {
-      model: model.name,
-      language: language.name,
-      hasImages: content.images.length > 0,
-    })
-
-    const messages = []
-
-    if (content.images.length > 0) {
-      // Mensagem com imagens
-      const messageContent = [{ type: "text", text: content.text }]
-
-      content.images.forEach((imageUrl) => {
-        messageContent.push({
-          type: "image_url",
-          image_url: { url: imageUrl },
-        })
-      })
-
-      messages.push({
-        role: "user",
-        content: messageContent,
-      })
-    } else {
-      // Apenas texto
-      messages.push({
-        role: "user",
-        content: content.text,
-      })
-    }
-
-    const response = await fetch(CONFIG.API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        messages: messages,
-        model: model.id,
-        language: language.id,
-      }),
-    })
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error("❌ Erro da API:", response.status, errorText)
-      throw new Error(`API Error: ${response.status} - ${errorText}`)
-    }
-
-    const data = await response.json()
-    console.log("✅ Resposta da API:", data)
-    return data.response
-  }
-
-  // Função para extrair letra da resposta
-  function extractLetter(response) {
-    console.log("🔍 Extraindo letra de:", response)
-
-    // Estratégias múltiplas para encontrar a letra
-    const strategies = [
-      /(?:resposta|answer|letra)[\s:]*([A-E])/i,
-      /\b([A-E])\b(?!.*\b[A-E]\b)/i,
-      /^([A-E])\b/im,
-      /\b([A-E])\)/,
-      /\b([A-E])\b/i,
-    ]
-
-    for (const regex of strategies) {
-      const match = response.match(regex)
-      if (match) {
-        const letter = match[1].toUpperCase()
-        console.log("✅ Letra encontrada:", letter)
-        return letter
-      }
-    }
-
-    console.log("❌ Nenhuma letra encontrada")
-    return null
-  }
-
-  // Função para marcar resposta
-  function markAnswer(letter) {
-    if (!letter) return
-
-    console.log("🎯 Marcando resposta:", letter)
-
-    const index = letter.charCodeAt(0) - 65
-    const selectors = [
-      'input[type="radio"]',
-      'div[role="radiogroup"] > *',
-      "ul li",
-      "ol li",
-      "label",
-      '[class*="option"]',
-      '[class*="alternativa"]',
-    ]
-
-    let found = false
-    for (const selector of selectors) {
-      const options = document.querySelectorAll(selector)
-      if (options[index]) {
-        const target = options[index].querySelector('input[type="radio"]') || options[index]
-        target.style.cssText += `
-          animation: pulse 2s infinite !important;
-          box-shadow: 0 0 0 4px #ff4444 !important;
-          border-radius: 50% !important;
-          background-color: #ff4444 !important;
-          transform: scale(1.2) !important;
-        `
-        console.log("✅ Resposta marcada:", target)
-        found = true
-        break
-      }
-    }
-
-    if (!found) {
-      console.log("❌ Não foi possível marcar a resposta")
-    }
-  }
-
-  // Função principal
-  async function processQuestion() {
+  // Função para enviar mensagem
+  async function sendMessage(content, images = []) {
     if (STATE.isProcessing) return
 
     STATE.isProcessing = true
-    updateStatus("🤖 Analisando...")
+
+    // Adicionar mensagem do usuário
+    const userMessage = { role: "user", content, images, timestamp: Date.now() }
+    STATE.messages.push(userMessage)
+    addMessageToChat(userMessage)
+
+    // Mostrar loading
+    const loadingId = addLoadingMessage()
 
     try {
-      const content = extractContent()
+      const model = CONFIG.MODELS[STATE.currentModel]
 
-      if (!content.text || content.text.length < 10) {
-        throw new Error("Conteúdo insuficiente encontrado")
-      }
+      // Preparar mensagens para API
+      const apiMessages = []
 
-      const response = await sendToAI(content)
-      const letter = extractLetter(response)
-
-      if (letter) {
-        STATE.lastAnswer = letter
-        markAnswer(letter)
-        updateStatus(`✅ Resposta: ${letter}`)
+      if (images.length > 0) {
+        const messageContent = [{ type: "text", text: content }]
+        images.forEach((img) => {
+          messageContent.push({
+            type: "image_url",
+            image_url: { url: img },
+          })
+        })
+        apiMessages.push({ role: "user", content: messageContent })
       } else {
-        updateStatus("❌ Não foi possível extrair resposta")
-        console.log("🤖 Resposta completa da IA:", response)
+        apiMessages.push({ role: "user", content })
       }
+
+      const response = await fetch(CONFIG.API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: apiMessages,
+          model: model.id,
+          language: "pt",
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Erro ${response.status}`)
+      }
+
+      const data = await response.json()
+
+      // Adicionar resposta da IA
+      const aiMessage = {
+        role: "assistant",
+        content: data.response,
+        model: model.name,
+        timestamp: Date.now(),
+      }
+      STATE.messages.push(aiMessage)
+
+      removeLoadingMessage(loadingId)
+      addMessageToChat(aiMessage)
     } catch (error) {
-      console.error("❌ Erro:", error)
-      updateStatus(`❌ Erro: ${error.message}`)
+      removeLoadingMessage(loadingId)
+      addMessageToChat({
+        role: "error",
+        content: `Erro: ${error.message}`,
+        timestamp: Date.now(),
+      })
     } finally {
       STATE.isProcessing = false
     }
   }
 
+  // Função para adicionar mensagem ao chat
+  function addMessageToChat(message) {
+    const chatMessages = document.getElementById("chat-messages")
+    const messageDiv = document.createElement("div")
+
+    const isUser = message.role === "user"
+    const isError = message.role === "error"
+
+    messageDiv.style.cssText = `
+      margin-bottom: 12px;
+      padding: 10px;
+      border-radius: 8px;
+      max-width: 85%;
+      word-wrap: break-word;
+      ${
+        isUser
+          ? "background: #007bff; color: white; margin-left: auto; text-align: right;"
+          : isError
+            ? "background: #dc3545; color: white;"
+            : "background: #f8f9fa; color: #333; border: 1px solid #dee2e6;"
+      }
+    `
+
+    let content = message.content
+
+    // Mostrar imagens se houver
+    if (message.images && message.images.length > 0) {
+      const imagesHtml = message.images
+        .map(
+          (img) => `<img src="${img}" style="max-width: 100px; max-height: 100px; margin: 5px; border-radius: 4px;" />`,
+        )
+        .join("")
+      content = imagesHtml + "<br>" + content
+    }
+
+    // Adicionar info do modelo se for resposta da IA
+    if (message.role === "assistant" && message.model) {
+      content += `<div style="font-size: 10px; opacity: 0.7; margin-top: 5px;">via ${message.model}</div>`
+    }
+
+    messageDiv.innerHTML = content
+    chatMessages.appendChild(messageDiv)
+    chatMessages.scrollTop = chatMessages.scrollHeight
+  }
+
+  // Função para adicionar loading
+  function addLoadingMessage() {
+    const chatMessages = document.getElementById("chat-messages")
+    const loadingDiv = document.createElement("div")
+    const loadingId = `loading-${Date.now()}`
+
+    loadingDiv.id = loadingId
+    loadingDiv.style.cssText = `
+      margin-bottom: 12px;
+      padding: 10px;
+      border-radius: 8px;
+      background: #f8f9fa;
+      color: #666;
+      border: 1px solid #dee2e6;
+      max-width: 85%;
+    `
+    loadingDiv.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <div style="width: 8px; height: 8px; background: #007bff; border-radius: 50%; animation: pulse 1.5s infinite;"></div>
+        <div style="width: 8px; height: 8px; background: #007bff; border-radius: 50%; animation: pulse 1.5s infinite 0.2s;"></div>
+        <div style="width: 8px; height: 8px; background: #007bff; border-radius: 50%; animation: pulse 1.5s infinite 0.4s;"></div>
+        <span>IA pensando...</span>
+      </div>
+    `
+
+    chatMessages.appendChild(loadingDiv)
+    chatMessages.scrollTop = chatMessages.scrollHeight
+    return loadingId
+  }
+
+  // Função para remover loading
+  function removeLoadingMessage(loadingId) {
+    document.getElementById(loadingId)?.remove()
+  }
+
+  // Função para processar imagens coladas
+  function handlePaste(e) {
+    const items = e.clipboardData?.items
+    if (!items) return
+
+    const images = []
+    const texts = []
+
+    for (const item of items) {
+      if (item.type.indexOf("image") !== -1) {
+        const file = item.getAsFile()
+        const reader = new FileReader()
+        reader.onload = (event) => {
+          images.push(event.target.result)
+          if (images.length === 1) {
+            // Primeira imagem
+            document.getElementById("chat-input").placeholder =
+              `${images.length} imagem(ns) colada(s). Digite sua pergunta...`
+          }
+        }
+        reader.readAsDataURL(file)
+      } else if (item.type === "text/plain") {
+        item.getAsString((text) => {
+          texts.push(text)
+          if (texts.length === 1) {
+            document.getElementById("chat-input").value = text
+          }
+        })
+      }
+    }
+
+    // Armazenar imagens temporariamente
+    setTimeout(() => {
+      if (images.length > 0) {
+        document.getElementById("chat-input").dataset.images = JSON.stringify(images)
+      }
+    }, 100)
+  }
+
   // Função para alternar modelo
   function cycleModel() {
     STATE.currentModel = (STATE.currentModel + 1) % CONFIG.MODELS.length
-    updateModelDisplay()
-    console.log("🔄 Modelo alterado para:", CONFIG.MODELS[STATE.currentModel].name)
-  }
-
-  // Função para alternar idioma
-  function cycleLanguage() {
-    STATE.currentLanguage = (STATE.currentLanguage + 1) % CONFIG.LANGUAGES.length
-    updateLanguageDisplay()
-    console.log("🌍 Idioma alterado para:", CONFIG.LANGUAGES[STATE.currentLanguage].name)
-  }
-
-  // Função para atualizar displays
-  function updateModelDisplay() {
     const model = CONFIG.MODELS[STATE.currentModel]
     document.getElementById("model-display").textContent = model.name
   }
 
-  function updateLanguageDisplay() {
-    const language = CONFIG.LANGUAGES[STATE.currentLanguage]
-    document.getElementById("language-display").textContent = language.name
+  // Função para limpar chat
+  function clearChat() {
+    STATE.messages = []
+    document.getElementById("chat-messages").innerHTML = ""
+    document.getElementById("chat-input").value = ""
+    document.getElementById("chat-input").placeholder = "Digite sua mensagem ou cole imagens..."
+    delete document.getElementById("chat-input").dataset.images
   }
 
-  function updateStatus(text) {
-    document.getElementById("status-display").textContent = text
-  }
-
-  // Função para remover script
-  function removeScript() {
-    console.log("👋 Removendo AI Assistant")
-    document.getElementById(SCRIPT_ID)?.remove()
-    document.removeEventListener("keydown", handleKeyPress)
-  }
-
-  // Handler de teclas
-  function handleKeyPress(e) {
-    if (e.target.matches("input, textarea, [contenteditable]")) return
-
-    switch (e.key) {
-      case "1":
-        e.preventDefault()
-        removeScript()
-        break
-      case "2":
-        e.preventDefault()
-        processQuestion()
-        break
-      case "3":
-        e.preventDefault()
-        cycleModel()
-        break
-      case "4":
-        e.preventDefault()
-        cycleLanguage()
-        break
-    }
-  }
-
-  // Criar interface
+  // Função para criar interface
   function createUI() {
     const container = document.createElement("div")
-    container.id = SCRIPT_ID
+    container.id = CHAT_ID
     container.style.cssText = `
       position: fixed;
       top: 20px;
       right: 20px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      padding: 15px;
+      width: 350px;
+      height: 500px;
+      background: white;
+      border: 1px solid #ccc;
       border-radius: 10px;
-      font-family: 'Segoe UI', sans-serif;
-      font-size: 12px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
       z-index: 999999;
-      min-width: 250px;
-      backdrop-filter: blur(10px);
+      display: flex;
+      flex-direction: column;
+      font-family: 'Segoe UI', sans-serif;
+      font-size: 14px;
     `
 
     container.innerHTML = `
-      <div style="text-align: center; margin-bottom: 10px;">
-        <div style="font-weight: bold; font-size: 14px;">🤖 AI Assistant</div>
-        <div style="font-size: 10px; opacity: 0.8;">Pressione [2] para analisar</div>
-      </div>
-      
-      <div style="margin-bottom: 8px;">
-        <div style="font-size: 10px; opacity: 0.8;">Modelo:</div>
-        <div id="model-display" style="font-weight: bold;"></div>
-      </div>
-      
-      <div style="margin-bottom: 8px;">
-        <div style="font-size: 10px; opacity: 0.8;">Idioma:</div>
-        <div id="language-display" style="font-weight: bold;"></div>
-      </div>
-      
-      <div style="margin-bottom: 10px;">
-        <div id="status-display" style="font-size: 11px; padding: 5px; background: rgba(0,0,0,0.2); border-radius: 5px;">
-          Pronto para analisar
+      <!-- Header -->
+      <div style="padding: 15px; border-bottom: 1px solid #eee; background: #f8f9fa; border-radius: 10px 10px 0 0;">
+        <div style="display: flex; justify-content: between; align-items: center;">
+          <div>
+            <div style="font-weight: bold; color: #333;">🤖 Chat IA</div>
+            <div style="font-size: 12px; color: #666;">Cole imagens e texto</div>
+          </div>
+          <button onclick="document.getElementById('${CHAT_ID}').remove()" style="background: #dc3545; color: white; border: none; border-radius: 50%; width: 25px; height: 25px; cursor: pointer; font-size: 12px; margin-left: auto;">×</button>
+        </div>
+        <div style="margin-top: 8px; display: flex; gap: 10px; align-items: center;">
+          <div style="font-size: 11px; color: #666;">Modelo:</div>
+          <div id="model-display" style="font-size: 11px; font-weight: bold; color: #007bff; cursor: pointer;" onclick="cycleModel()">${CONFIG.MODELS[0].name}</div>
+          <button onclick="clearChat()" style="background: #6c757d; color: white; border: none; border-radius: 4px; padding: 2px 6px; font-size: 10px; cursor: pointer; margin-left: auto;">Limpar</button>
         </div>
       </div>
-      
-      <div style="font-size: 10px; opacity: 0.7; line-height: 1.3;">
-        [1] Sair • [2] Analisar<br>
-        [3] Modelo • [4] Idioma
+
+      <!-- Messages -->
+      <div id="chat-messages" style="flex: 1; padding: 15px; overflow-y: auto; background: #fff;">
+        <div style="text-align: center; color: #666; font-size: 12px; margin: 20px 0;">
+          Cole imagens (Ctrl+V) ou digite sua pergunta
+        </div>
+      </div>
+
+      <!-- Input -->
+      <div style="padding: 15px; border-top: 1px solid #eee; background: #f8f9fa;">
+        <div style="display: flex; gap: 8px;">
+          <input 
+            id="chat-input" 
+            type="text" 
+            placeholder="Digite sua mensagem ou cole imagens..."
+            style="flex: 1; padding: 8px 12px; border: 1px solid #ccc; border-radius: 20px; outline: none; font-size: 14px;"
+          />
+          <button 
+            id="send-btn"
+            style="background: #007bff; color: white; border: none; border-radius: 50%; width: 35px; height: 35px; cursor: pointer; display: flex; align-items: center; justify-content: center;"
+          >
+            ➤
+          </button>
+        </div>
+        <div style="font-size: 10px; color: #666; margin-top: 5px; text-align: center;">
+          Ctrl+V para colar • Clique no modelo para trocar
+        </div>
       </div>
     `
 
     document.body.appendChild(container)
 
-    // Inicializar displays
-    updateModelDisplay()
-    updateLanguageDisplay()
+    // Event listeners
+    const input = document.getElementById("chat-input")
+    const sendBtn = document.getElementById("send-btn")
 
-    // Adicionar event listener
-    document.addEventListener("keydown", handleKeyPress)
+    // Enviar mensagem
+    const sendCurrentMessage = () => {
+      const text = input.value.trim()
+      if (!text) return
 
-    // Adicionar animação de pulso
+      const images = input.dataset.images ? JSON.parse(input.dataset.images) : []
+      sendMessage(text, images)
+
+      input.value = ""
+      input.placeholder = "Digite sua mensagem ou cole imagens..."
+      delete input.dataset.images
+    }
+
+    sendBtn.onclick = sendCurrentMessage
+    input.onkeypress = (e) => {
+      if (e.key === "Enter") {
+        sendCurrentMessage()
+      }
+    }
+
+    // Paste handler
+    input.addEventListener("paste", handlePaste)
+
+    // Funções globais para os botões
+    window.cycleModel = cycleModel
+    window.clearChat = clearChat
+
+    // Adicionar CSS para animações
     const style = document.createElement("style")
     style.textContent = `
       @keyframes pulse {
-        0% { transform: scale(1); }
-        50% { transform: scale(1.1); }
-        100% { transform: scale(1); }
+        0%, 100% { opacity: 0.4; }
+        50% { opacity: 1; }
       }
     `
     document.head.appendChild(style)
 
-    console.log("🤖 AI Assistant ativado!")
-    console.log("📋 Controles:")
-    console.log("  [1] - Sair")
-    console.log("  [2] - Analisar questão")
-    console.log("  [3] - Trocar modelo")
-    console.log("  [4] - Trocar idioma")
+    console.log("🤖 Chat IA ativado!")
+    console.log("📋 Funcionalidades:")
+    console.log("  • Cole imagens com Ctrl+V")
+    console.log("  • Digite perguntas")
+    console.log("  • Clique no modelo para trocar")
+    console.log("  • Botão limpar para resetar")
   }
 
   // Inicializar
