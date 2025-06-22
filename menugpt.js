@@ -9,9 +9,10 @@ javascript: (function() {
         return;
     }
     
-    const SCRIPT_VERSION = '12.2.0-vision-debug';
+    const SCRIPT_VERSION = '12.4.0-with-cache';
     const CONFIG = {
         API_ENDPOINT: 'https://v0-openrouter-ai-endpoint.vercel.app/api/chat-selector',
+        CACHE_ENDPOINT: 'https://v0-openrouter-ai-endpoint.vercel.app/api/cache',
         MODELS: [
             { id: "gemini-1.5-flash", name: "Gemini 1.5 (Geral/Visão)" },
             { id: "meta-llama/Llama-3.3-70B-Instruct-Turbo", name: "Llama 3.3 (Humanas)" },
@@ -21,11 +22,119 @@ javascript: (function() {
         API_TIMEOUT: 30000,
         NOTIFICATION_TIMEOUT: 4000
     };
-    const STATE = { lastAnswer: null, isRunning: false, currentModelIndex: 0, ui: {}, activeNotifications: {}, imageCount: 0 };
+    const STATE = { 
+        lastAnswer: null, 
+        isRunning: false, 
+        currentModelIndex: 0, 
+        ui: {}, 
+        activeNotifications: {}, 
+        imageCount: 0,
+        lastQuestion: null,
+        lastResponse: null,
+        lastCacheId: null
+    };
 
     const log = (level, ...args) => (console[level.toLowerCase()] || console.log)(`[HCK]`, ...args);
     const withTimeout = (promise, ms) => Promise.race([promise, new Promise((_, rj) => setTimeout(() => rj(new Error(`Timeout ${ms}ms`)), ms))]);
     const sanitize = (text) => typeof text === 'string' ? text.replace(/\n\s*\n/g, '\n').replace(/ {2,}/g, ' ').trim() : '';
+    
+    // Função para salvar no cache
+    async function saveToCache(question, response, model, isCorrect = true) {
+        try {
+            log('INFO', '💾 SALVANDO NO CACHE:', { question: question.substring(0, 50) + '...', response, model });
+            
+            const payload = {
+                action: 'save',
+                question: question,
+                response: response,
+                model: model,
+                isCorrect: isCorrect,
+                timestamp: new Date().toISOString()
+            };
+
+            const res = await fetch(CONFIG.CACHE_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                log('INFO', '✅ SALVO NO CACHE COM SUCESSO:', data);
+                return data;
+            } else {
+                log('WARN', '⚠️ FALHA AO SALVAR NO CACHE:', res.status);
+            }
+        } catch (error) {
+            log('ERROR', '❌ ERRO AO SALVAR NO CACHE:', error);
+        }
+        return null;
+    }
+
+    // Função para marcar resposta como incorreta
+    async function markIncorrect(cacheId) {
+        try {
+            log('INFO', '❌ MARCANDO COMO INCORRETA:', cacheId);
+            
+            const payload = {
+                action: 'mark_incorrect',
+                questionHash: cacheId
+            };
+
+            const res = await fetch(CONFIG.CACHE_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                log('INFO', '✅ MARCADA COMO INCORRETA');
+                STATE.ui.notify({ 
+                    id: 'marked_incorrect', 
+                    text: "❌ Marcada como Incorreta", 
+                    detail: "Use [6] para corrigir", 
+                    type: 'warn' 
+                });
+                return true;
+            }
+        } catch (error) {
+            log('ERROR', '❌ ERRO AO MARCAR INCORRETA:', error);
+        }
+        return false;
+    }
+
+    // Função para corrigir resposta
+    async function correctResponse(cacheId, correctedAnswer) {
+        try {
+            log('INFO', '✅ CORRIGINDO RESPOSTA:', { cacheId, correctedAnswer });
+            
+            const payload = {
+                action: 'correct',
+                questionHash: cacheId,
+                correctedResponse: correctedAnswer
+            };
+
+            const res = await fetch(CONFIG.CACHE_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                log('INFO', '✅ RESPOSTA CORRIGIDA');
+                STATE.ui.notify({ 
+                    id: 'corrected', 
+                    text: "✅ Resposta Corrigida", 
+                    detail: `Nova resposta: ${correctedAnswer}`, 
+                    type: 'success' 
+                });
+                return true;
+            }
+        } catch (error) {
+            log('ERROR', '❌ ERRO AO CORRIGIR:', error);
+        }
+        return false;
+    }
     
     function getContent(node) {
         if (!node || (node.nodeType === Node.ELEMENT_NODE && ((node.offsetParent === null && node.style.display !== 'flex') || node.style.display === 'none'))) return '';
@@ -53,10 +162,10 @@ javascript: (function() {
 
                 const url = new URL(src, window.location.href).toString();
                 
-                // Filtros para imagens irrelevantes
-                const isRelevant = !/(_logo|\.svg|icon|button|banner|avatar|profile|thumb|sprite|captcha|loading|spinner|placeholder|background|pattern|texture|favicon|asset|static|decorator|spacer|dummy|transparent|1x1|blank\.gif|clear\.gif|ad\.|advert|tracking|pixel|beacon)/i.test(url);
+                // FILTRO MAIS PERMISSIVO - apenas bloquear logos e ícones óbvios
+                const isIrrelevant = /(_logo|favicon|icon-|btn-|button-|banner-|avatar-|profile-|captcha|loading|spinner|\.svg$)/i.test(url);
                 
-                if (isRelevant) {
+                if (!isIrrelevant) {
                     STATE.imageCount++;
                     log('INFO', `✅ IMAGEM RELEVANTE #${STATE.imageCount}:`, {
                         url: url,
@@ -97,11 +206,11 @@ javascript: (function() {
         STATE.imageCount = 0; // Reset contador de imagens
         
         let card = null;
-        const selectors = 'div.MuiPaper-root, article[class*="question"], section[class*="assessment"], div[class*="questao"]';
+        const selectors = 'div.MuiPaper-root, article[class*="question"], section[class*="assessment"], div[class*="questao"], .question-container, .assessment-item';
         
         for (const c of document.querySelectorAll(selectors)) { 
             if (c.closest('#'+HCK_ID)) continue; 
-            if (c.querySelector('div[role="radiogroup"], ul[class*="option"], ol[class*="choice"]')) { 
+            if (c.querySelector('div[role="radiogroup"], ul[class*="option"], ol[class*="choice"], input[type="radio"]')) { 
                 card = c; 
                 log('INFO', '📋 CARD DA QUESTÃO ENCONTRADO:', c.className);
                 break; 
@@ -109,8 +218,15 @@ javascript: (function() {
         }
         
         if (!card) {
-            card = document.body;
-            log('WARN', '⚠️ USANDO DOCUMENT.BODY COMO FALLBACK');
+            // Fallback mais agressivo - procurar por qualquer container com alternativas
+            const radioInputs = document.querySelectorAll('input[type="radio"]');
+            if (radioInputs.length > 0) {
+                card = radioInputs[0].closest('div, section, article') || document.body;
+                log('INFO', '📋 CARD ENCONTRADO VIA RADIO INPUTS:', card.tagName);
+            } else {
+                card = document.body;
+                log('WARN', '⚠️ USANDO DOCUMENT.BODY COMO FALLBACK');
+            }
         }
 
         // Verificar imagens no card antes da extração
@@ -126,7 +242,7 @@ javascript: (function() {
         });
 
         let statement = '';
-        const statementEl = card.querySelector('.ql-editor, div[class*="enunciado"], .question-statement, .texto-base');
+        const statementEl = card.querySelector('.ql-editor, div[class*="enunciado"], .question-statement, .texto-base, .question-text');
         
         if (statementEl && !statementEl.closest('div[role="radiogroup"]')) { 
             log('INFO', '📝 ENUNCIADO ENCONTRADO EM ELEMENTO ESPECÍFICO');
@@ -134,7 +250,10 @@ javascript: (function() {
         } else { 
             log('INFO', '📝 EXTRAINDO ENUNCIADO DE TODOS OS FILHOS DO CARD');
             for (const child of card.childNodes) { 
-                if (child.nodeType === Node.ELEMENT_NODE && (child.matches('div[role="radiogroup"], ul[class*="option"], ol[class*="choice"]') || child.querySelector('div[role="radiogroup"]'))) {
+                if (child.nodeType === Node.ELEMENT_NODE && (
+                    child.matches('div[role="radiogroup"], ul[class*="option"], ol[class*="choice"]') || 
+                    child.querySelector('div[role="radiogroup"], input[type="radio"]')
+                )) {
                     log('INFO', '🛑 PARANDO EXTRAÇÃO - ENCONTROU ALTERNATIVAS');
                     break; 
                 }
@@ -146,24 +265,71 @@ javascript: (function() {
         log('INFO', '📝 ENUNCIADO EXTRAÍDO:', statement.substring(0, 200) + '...');
         
         const alternatives = [];
-        const radioGroup = card.querySelector('div[role="radiogroup"], ul[class*="option"], ol[class*="choice"]');
+        
+        // Múltiplas estratégias para encontrar alternativas
+        let radioGroup = card.querySelector('div[role="radiogroup"], ul[class*="option"], ol[class*="choice"]');
+        
+        if (!radioGroup) {
+            // Procurar por inputs radio e pegar o container pai
+            const radioInputs = card.querySelectorAll('input[type="radio"]');
+            if (radioInputs.length > 0) {
+                radioGroup = radioInputs[0].closest('div, ul, ol') || radioInputs[0].parentElement;
+                log('INFO', '🔘 GRUPO ENCONTRADO VIA RADIO INPUTS');
+            }
+        }
         
         if (radioGroup) {
             log('INFO', '🔘 GRUPO DE ALTERNATIVAS ENCONTRADO');
-            const items = Array.from(radioGroup.children).filter(el => el.matches('div, label, li'));
+            
+            // Estratégia 1: Filhos diretos
+            let items = Array.from(radioGroup.children).filter(el => el.matches('div, label, li'));
+            
+            // Estratégia 2: Se não encontrou, procurar por labels ou divs com radio
+            if (items.length === 0) {
+                items = Array.from(radioGroup.querySelectorAll('label, div')).filter(el => 
+                    el.querySelector('input[type="radio"]') || el.textContent.trim().length > 0
+                );
+            }
+            
+            // Estratégia 3: Se ainda não encontrou, pegar todos os elementos com texto
+            if (items.length === 0) {
+                items = Array.from(radioGroup.querySelectorAll('*')).filter(el => 
+                    el.textContent.trim().length > 5 && !el.querySelector('*')
+                );
+            }
+            
             log('INFO', `🔘 TOTAL DE ITENS DE ALTERNATIVAS: ${items.length}`);
             
             items.forEach((item, index) => {
                 if (alternatives.length >= 5) return;
                 const letter = String.fromCharCode(65 + alternatives.length);
                 let content = sanitize(getContent(item)).replace(/^[A-Ea-e][\)\.]\s*/, '').trim();
-                if (content) {
+                
+                // Se o conteúdo está muito curto, tentar pegar apenas o texto
+                if (content.length < 3) {
+                    content = item.textContent.trim().replace(/^[A-Ea-e][\)\.]\s*/, '').trim();
+                }
+                
+                if (content && content.length > 1) {
                     alternatives.push(`${letter}) ${content}`);
                     log('INFO', `🔘 ALTERNATIVA ${letter} EXTRAÍDA:`, content.substring(0, 100) + '...');
                 }
             });
         } else {
             log('WARN', '⚠️ NENHUM GRUPO DE ALTERNATIVAS ENCONTRADO');
+            
+            // Última tentativa: procurar por padrões de texto que parecem alternativas
+            const allText = card.textContent;
+            const possibleAlternatives = allText.match(/[A-E]\s*[\)\.]\s*[^\n\r]{10,}/g);
+            if (possibleAlternatives) {
+                log('INFO', '🔍 TENTATIVA DE EXTRAÇÃO POR REGEX');
+                possibleAlternatives.slice(0, 5).forEach((alt, index) => {
+                    const letter = String.fromCharCode(65 + index);
+                    const content = alt.replace(/^[A-E]\s*[\)\.]\s*/, '').trim();
+                    alternatives.push(`${letter}) ${content}`);
+                    log('INFO', `🔘 ALTERNATIVA ${letter} (REGEX):`, content.substring(0, 100) + '...');
+                });
+            }
         }
         
         // Log final da extração
@@ -171,15 +337,18 @@ javascript: (function() {
             enunciadoLength: statement.length,
             alternativasCount: alternatives.length,
             imagensEncontradas: STATE.imageCount,
-            temConteudoSuficiente: statement.length >= 5 || alternatives.some(a => a.length >= 10)
+            temConteudoSuficiente: statement.length >= 5 || alternatives.length >= 2
         });
 
-        if (statement.length < 5 && alternatives.every(a => a.length < 10)) {
+        if (statement.length < 5 && alternatives.length < 2) {
             log('ERROR', '❌ FALHA NA EXTRAÇÃO: CONTEÚDO INSUFICIENTE');
             return "Falha na extração: conteúdo insuficiente.";
         }
 
         const finalQuestion = `--- Enunciado ---\n${statement || "(Vazio)"}\n\n--- Alternativas ---\n${alternatives.join('\n') || "(Nenhuma)"}`.replace(/\n{3,}/g, '\n\n');
+        
+        // Salvar questão no estado para cache posterior
+        STATE.lastQuestion = finalQuestion;
         
         // Log da questão final (apenas primeiros 500 chars para não poluir)
         log('INFO', '✅ QUESTÃO FINAL EXTRAÍDA:', finalQuestion.substring(0, 500) + '...');
@@ -221,7 +390,8 @@ javascript: (function() {
                 ok: res.ok,
                 response: data.response,
                 source: data.source,
-                model: data.model
+                model: data.model,
+                cacheId: data.cacheId
             });
 
             if (!res.ok) {
@@ -229,7 +399,12 @@ javascript: (function() {
                 throw new Error(data?.message || `Erro HTTP ${res.status}`);
             }
             
-            if (data.response) return data;
+            if (data.response) {
+                // Salvar informações para cache
+                STATE.lastResponse = data.response;
+                STATE.lastCacheId = data.cacheId;
+                return data;
+            }
             
             log('ERROR', '❌ API RETORNOU RESPOSTA INVÁLIDA:', data);
             throw new Error("API retornou resposta inválida.");
@@ -247,8 +422,11 @@ javascript: (function() {
         document.querySelectorAll('.'+PULSE_CLASS).forEach(e => e.classList.remove(PULSE_CLASS));
         if (!letter) return;
         const index = letter.charCodeAt(0) - 65;
-        const alts = document.querySelectorAll('div[role="radiogroup"] > label, div[role="radiogroup"] > div, ul[class*="option"] > li, ol[class*="choice"] > li');
-        if (alts[index]) (alts[index].querySelector('.MuiRadio-root, input[type=radio]') || alts[index]).classList.add(PULSE_CLASS);
+        const alts = document.querySelectorAll('div[role="radiogroup"] > label, div[role="radiogroup"] > div, ul[class*="option"] > li, ol[class*="choice"] > li, input[type="radio"]');
+        if (alts[index]) {
+            const target = alts[index].querySelector('.MuiRadio-root, input[type=radio]') || alts[index];
+            target.classList.add(PULSE_CLASS);
+        }
     }
 
     function cycleModel() {
@@ -258,6 +436,29 @@ javascript: (function() {
         STATE.ui.updateModelDisplay(newModel.name);
         STATE.ui.notify({ id: 'model_change', text: "Modelo Alterado", detail: newModel.name, type: 'info' });
         log('INFO', '🔄 MODELO ALTERADO PARA:', newModel);
+    }
+
+    // Função para marcar como incorreta
+    function markAsIncorrect() {
+        if (STATE.isRunning || !STATE.lastCacheId) return;
+        markIncorrect(STATE.lastCacheId);
+    }
+
+    // Função para corrigir resposta
+    function promptCorrection() {
+        if (STATE.isRunning || !STATE.lastCacheId) return;
+        
+        const correctedAnswer = prompt("Digite a resposta correta (A, B, C, D ou E):");
+        if (correctedAnswer && /^[A-E]$/i.test(correctedAnswer.trim())) {
+            correctResponse(STATE.lastCacheId, correctedAnswer.toUpperCase());
+        } else if (correctedAnswer) {
+            STATE.ui.notify({ 
+                id: 'invalid_correction', 
+                text: "❌ Resposta Inválida", 
+                detail: "Use apenas A, B, C, D ou E", 
+                type: 'error' 
+            });
+        }
     }
 
     async function run() {
@@ -288,7 +489,8 @@ javascript: (function() {
                 answer: answer,
                 source: result.source,
                 model: modelName,
-                hadImages: STATE.imageCount > 0
+                hadImages: STATE.imageCount > 0,
+                cacheId: result.cacheId
             });
 
             if (answer) {
@@ -301,6 +503,11 @@ javascript: (function() {
                     detail: successDetail, 
                     type: 'success' 
                 });
+
+                // Se não veio do cache, salvar no nosso cache
+                if (result.source === 'live_api' && STATE.lastQuestion) {
+                    await saveToCache(STATE.lastQuestion, answer, currentModel.id, true);
+                }
             } else {
                 log('ERROR', '❌ FORMATO DE RESPOSTA INVÁLIDO:', result.response);
                 throw new Error("Formato de resposta inválido.");
@@ -346,7 +553,15 @@ javascript: (function() {
     
     function handleKeys(e) { 
         if (e.target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || e.repeat) return; 
-        const actions = {'1':STATE.ui.toggleMenu, '2':run, '3':showAnswer, '4':cycleModel, '5':kill}; 
+        const actions = {
+            '1': STATE.ui.toggleMenu, 
+            '2': run, 
+            '3': showAnswer, 
+            '4': cycleModel, 
+            '5': kill,
+            '6': markAsIncorrect,
+            '7': promptCorrection
+        }; 
         actions[e.key]?.(e.preventDefault()); 
         if (e.key === 'Escape') STATE.ui.toggleMenu(false); 
     }
@@ -361,7 +576,7 @@ javascript: (function() {
         container.style.cssText = `position:fixed; bottom:20px; right:20px; z-index:2147483647; font-family:${C.font}; animation:hck-fade-in .4s ease-out;`;
 
         const menu = document.createElement('div');
-        menu.style.cssText = `width:280px; background:${C.bg}; backdrop-filter:blur(10px); color:${C.text}; padding:10px; border-radius:10px; border:1px solid ${C.border}; box-shadow:${C.shadow}; display:none; flex-direction:column; gap:8px; transition: all .3s ease-out; position:absolute; bottom:calc(100% + 10px); right:0; opacity:0; transform-origin: bottom right;`;
+        menu.style.cssText = `width:300px; background:${C.bg}; backdrop-filter:blur(10px); color:${C.text}; padding:10px; border-radius:10px; border:1px solid ${C.border}; box-shadow:${C.shadow}; display:none; flex-direction:column; gap:8px; transition: all .3s ease-out; position:absolute; bottom:calc(100% + 10px); right:0; opacity:0; transform-origin: bottom right;`;
         
         const titleBar = document.createElement('div');
         titleBar.innerHTML = `<div style="font-weight:600; font-size:14px; background:${C.grad}; -webkit-background-clip:text; -webkit-text-fill-color:transparent;">HCK - PROVA PAULISTA V2</div><div style="font-size:9px; color:${C.text2}; align-self:flex-end;">v${SCRIPT_VERSION}</div>`;
@@ -371,7 +586,7 @@ javascript: (function() {
         modelDisplay.style.cssText = `font-size:11px; color:${C.text2}; text-align:center; background:rgba(0,0,0,0.2); padding: 5px; border-radius: 6px; border: 1px solid ${C.border}; margin-top: 8px;`;
         
         const shortcuts = document.createElement('div');
-        shortcuts.innerHTML = `<div style="display:grid; grid-template-columns:auto 1fr; gap:5px 12px; font-size:11px; color:${C.text2}; margin-top:8px; padding-top:8px; border-top: 1px solid ${C.border};"><b style="color:${C.text};">[1]</b>Menu <b style="color:${C.text};">[2]</b>Executar <b style="color:${C.text};">[3]</b>Marcar <b style="color:${C.text};">[4]</b>Mudar Modelo <b style="color:${C.text};">[5]</b>Sair</div>`;
+        shortcuts.innerHTML = `<div style="display:grid; grid-template-columns:auto 1fr; gap:5px 12px; font-size:11px; color:${C.text2}; margin-top:8px; padding-top:8px; border-top: 1px solid ${C.border};"><b style="color:${C.text};">[1]</b>Menu <b style="color:${C.text};">[2]</b>Executar <b style="color:${C.text};">[3]</b>Marcar <b style="color:${C.text};">[4]</b>Mudar Modelo <b style="color:${C.text};">[5]</b>Sair <b style="color:${C.text};">[6]</b>Incorreta <b style="color:${C.text};">[7]</b>Corrigir</div>`;
         
         const credits = document.createElement('div');
         credits.innerHTML = `by <b style="background:${C.grad};-webkit-background-clip:text;-webkit-text-fill-color:transparent;">Hackermoon1</b> & <b style="background:${C.grad};-webkit-background-clip:text;-webkit-text-fill-color:transparent;">Dontbrazz</b>`;
@@ -413,7 +628,7 @@ javascript: (function() {
             
             let color = {'info':'#00D0FF', 'success':'#A070FF', 'error':'#F50057', 'warn':'#FFDB41', 'processing':'#FFDB41', 'marking': C.pulse}[type];
             const n = document.createElement('div');
-            n.style.cssText=`width:280px; background:rgba(22, 22, 30, 0.9); backdrop-filter:blur(10px); color:${C.text}; padding:12px 16px; border-radius:10px; box-shadow:${C.shadow}; display:flex; flex-direction:column; gap:4px; opacity:0; transform:translateX(20px); transition:all .4s cubic-bezier(0.2, 1, 0.4, 1); border-left:4px solid ${color}; cursor:pointer; font-size:14px; overflow:hidden;`;
+            n.style.cssText=`width:300px; background:rgba(22, 22, 30, 0.9); backdrop-filter:blur(10px); color:${C.text}; padding:12px 16px; border-radius:10px; box-shadow:${C.shadow}; display:flex; flex-direction:column; gap:4px; opacity:0; transform:translateX(20px); transition:all .4s cubic-bezier(0.2, 1, 0.4, 1); border-left:4px solid ${color}; cursor:pointer; font-size:14px; overflow:hidden;`;
             n.innerHTML = `<strong style="color:${color};">${text}</strong>${detail ? `<span style="font-size:0.9em;color:${C.text2};display:block;">${detail}</span>` : ''}<div class="hck-progress-bar" style="position:absolute; bottom:0; left:0; height:2px; background:${color}; opacity:0.6;"></div>`;
             
             const hide = () => {
