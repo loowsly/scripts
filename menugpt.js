@@ -38,7 +38,7 @@ javascript: (() => {
 
     // Procurar por container da questão
     const containers = document.querySelectorAll(
-      'div[class*="question"], div[class*="questao"], .MuiPaper-root, article',
+      'div[class*="question"], div[class*="questao"], .MuiPaper-root, article, main, section',
     )
     let mainContainer = null
 
@@ -53,14 +53,17 @@ javascript: (() => {
       mainContainer = document.body
     }
 
+    console.log("📋 Container encontrado:", mainContainer.tagName, mainContainer.className)
+
     // Extrair imagens
     mainContainer.querySelectorAll("img").forEach((img) => {
-      if (img.src && !img.src.includes("icon") && !img.src.includes("logo")) {
+      if (img.src && !img.src.includes("icon") && !img.src.includes("logo") && !img.src.includes("avatar")) {
         images.push(img.src)
+        console.log("🖼️ Imagem encontrada:", img.src)
       }
     })
 
-    // Extrair texto
+    // Extrair texto de forma mais robusta
     const walker = document.createTreeWalker(mainContainer, NodeFilter.SHOW_TEXT, {
       acceptNode: (node) => {
         const parent = node.parentElement
@@ -68,6 +71,11 @@ javascript: (() => {
 
         const style = window.getComputedStyle(parent)
         if (style.display === "none" || style.visibility === "hidden") {
+          return NodeFilter.FILTER_REJECT
+        }
+
+        // Ignorar scripts e estilos
+        if (parent.tagName === "SCRIPT" || parent.tagName === "STYLE") {
           return NodeFilter.FILTER_REJECT
         }
 
@@ -83,8 +91,11 @@ javascript: (() => {
       }
     }
 
+    const finalText = textContent.join(" ").replace(/\s+/g, " ").trim()
+    console.log("📝 Texto extraído:", finalText.substring(0, 200) + "...")
+
     return {
-      text: textContent.join(" ").replace(/\s+/g, " ").trim(),
+      text: finalText,
       images: images,
     }
   }
@@ -93,6 +104,12 @@ javascript: (() => {
   async function sendToAI(content) {
     const model = CONFIG.MODELS[STATE.currentModel]
     const language = CONFIG.LANGUAGES[STATE.currentLanguage]
+
+    console.log("🚀 Enviando para API:", {
+      model: model.name,
+      language: language.name,
+      hasImages: content.images.length > 0,
+    })
 
     const messages = []
 
@@ -121,7 +138,10 @@ javascript: (() => {
 
     const response = await fetch(CONFIG.API_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
       body: JSON.stringify({
         messages: messages,
         model: model.id,
@@ -130,33 +150,79 @@ javascript: (() => {
     })
 
     if (!response.ok) {
-      throw new Error(`API Error: ${response.status}`)
+      const errorText = await response.text()
+      console.error("❌ Erro da API:", response.status, errorText)
+      throw new Error(`API Error: ${response.status} - ${errorText}`)
     }
 
     const data = await response.json()
+    console.log("✅ Resposta da API:", data)
     return data.response
   }
 
   // Função para extrair letra da resposta
   function extractLetter(response) {
-    const match = response.match(/\b([A-E])\b/i)
-    return match ? match[1].toUpperCase() : null
+    console.log("🔍 Extraindo letra de:", response)
+
+    // Estratégias múltiplas para encontrar a letra
+    const strategies = [
+      /(?:resposta|answer|letra)[\s:]*([A-E])/i,
+      /\b([A-E])\b(?!.*\b[A-E]\b)/i,
+      /^([A-E])\b/im,
+      /\b([A-E])\)/,
+      /\b([A-E])\b/i,
+    ]
+
+    for (const regex of strategies) {
+      const match = response.match(regex)
+      if (match) {
+        const letter = match[1].toUpperCase()
+        console.log("✅ Letra encontrada:", letter)
+        return letter
+      }
+    }
+
+    console.log("❌ Nenhuma letra encontrada")
+    return null
   }
 
   // Função para marcar resposta
   function markAnswer(letter) {
     if (!letter) return
 
-    const index = letter.charCodeAt(0) - 65
-    const options = document.querySelectorAll('input[type="radio"], div[role="radiogroup"] > *, ul li, ol li')
+    console.log("🎯 Marcando resposta:", letter)
 
-    if (options[index]) {
-      const target = options[index].querySelector('input[type="radio"]') || options[index]
-      target.style.cssText += `
-        animation: pulse 1s infinite;
-        box-shadow: 0 0 0 4px #ff4444 !important;
-        border-radius: 50% !important;
-      `
+    const index = letter.charCodeAt(0) - 65
+    const selectors = [
+      'input[type="radio"]',
+      'div[role="radiogroup"] > *',
+      "ul li",
+      "ol li",
+      "label",
+      '[class*="option"]',
+      '[class*="alternativa"]',
+    ]
+
+    let found = false
+    for (const selector of selectors) {
+      const options = document.querySelectorAll(selector)
+      if (options[index]) {
+        const target = options[index].querySelector('input[type="radio"]') || options[index]
+        target.style.cssText += `
+          animation: pulse 2s infinite !important;
+          box-shadow: 0 0 0 4px #ff4444 !important;
+          border-radius: 50% !important;
+          background-color: #ff4444 !important;
+          transform: scale(1.2) !important;
+        `
+        console.log("✅ Resposta marcada:", target)
+        found = true
+        break
+      }
+    }
+
+    if (!found) {
+      console.log("❌ Não foi possível marcar a resposta")
     }
   }
 
@@ -174,14 +240,7 @@ javascript: (() => {
         throw new Error("Conteúdo insuficiente encontrado")
       }
 
-      console.log("📝 Conteúdo extraído:", content.text.substring(0, 200) + "...")
-      if (content.images.length > 0) {
-        console.log("🖼️ Imagens encontradas:", content.images.length)
-      }
-
       const response = await sendToAI(content)
-      console.log("🤖 Resposta da IA:", response)
-
       const letter = extractLetter(response)
 
       if (letter) {
@@ -190,9 +249,10 @@ javascript: (() => {
         updateStatus(`✅ Resposta: ${letter}`)
       } else {
         updateStatus("❌ Não foi possível extrair resposta")
+        console.log("🤖 Resposta completa da IA:", response)
       }
     } catch (error) {
-      console.error("Erro:", error)
+      console.error("❌ Erro:", error)
       updateStatus(`❌ Erro: ${error.message}`)
     } finally {
       STATE.isProcessing = false
@@ -203,12 +263,14 @@ javascript: (() => {
   function cycleModel() {
     STATE.currentModel = (STATE.currentModel + 1) % CONFIG.MODELS.length
     updateModelDisplay()
+    console.log("🔄 Modelo alterado para:", CONFIG.MODELS[STATE.currentModel].name)
   }
 
   // Função para alternar idioma
   function cycleLanguage() {
     STATE.currentLanguage = (STATE.currentLanguage + 1) % CONFIG.LANGUAGES.length
     updateLanguageDisplay()
+    console.log("🌍 Idioma alterado para:", CONFIG.LANGUAGES[STATE.currentLanguage].name)
   }
 
   // Função para atualizar displays
@@ -228,6 +290,7 @@ javascript: (() => {
 
   // Função para remover script
   function removeScript() {
+    console.log("👋 Removendo AI Assistant")
     document.getElementById(SCRIPT_ID)?.remove()
     document.removeEventListener("keydown", handleKeyPress)
   }
@@ -279,7 +342,7 @@ javascript: (() => {
     container.innerHTML = `
       <div style="text-align: center; margin-bottom: 10px;">
         <div style="font-weight: bold; font-size: 14px;">🤖 AI Assistant</div>
-        <div style="font-size: 10px; opacity: 0.8;">Arraste questões aqui</div>
+        <div style="font-size: 10px; opacity: 0.8;">Pressione [2] para analisar</div>
       </div>
       
       <div style="margin-bottom: 8px;">
