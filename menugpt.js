@@ -11,21 +11,22 @@ javascript: (() => {
     return
   }
 
-  const SCRIPT_VERSION = "12.7.0-debug-response"
+  const SCRIPT_VERSION = "13.0.0-reasoning"
   const CONFIG = {
     API_ENDPOINT: "https://v0-openrouter-ai-endpoint.vercel.app/api/chat-selector",
     CACHE_ENDPOINT: "https://v0-openrouter-ai-endpoint.vercel.app/api/cache",
     MODELS: [
+      { id: "gpt-4o", name: "GPT-4O (Inteligente)" },
+      { id: "claude-3.5-sonnet", name: "Claude 3.5 (Analítico)" },
+      { id: "gemini-1.5-flash", name: "Gemini 1.5 (Visão)" },
       { id: "gpt-4o-mini", name: "GPT-4O Mini (Rápido)" },
-      { id: "gemini-1.5-flash", name: "Gemini 1.5 (Geral/Visão)" },
-      { id: "deepseek-chat", name: "DeepSeek V3 (Eficiente)" },
-      { id: "claude-3.5-sonnet", name: "Claude 3.5 (Inteligente)" },
     ],
-    API_TIMEOUT: 30000,
-    NOTIFICATION_TIMEOUT: 4000,
+    API_TIMEOUT: 45000,
+    NOTIFICATION_TIMEOUT: 6000,
   }
   const STATE = {
     lastAnswer: null,
+    lastReasoning: null,
     isRunning: false,
     currentModelIndex: 0,
     ui: {},
@@ -47,81 +48,77 @@ javascript: (() => {
           .trim()
       : ""
 
-  // Função MUITO melhorada para extrair resposta
-  const formatResponse = (ans) => {
-    if (typeof ans !== "string") {
-      log("ERROR", "❌ RESPOSTA NÃO É STRING:", typeof ans, ans)
-      return null
+  // Função para extrair resposta do raciocínio da IA
+  const extractAnswerFromReasoning = (reasoning) => {
+    if (typeof reasoning !== "string") {
+      log("ERROR", "❌ RACIOCÍNIO NÃO É STRING:", typeof reasoning, reasoning)
+      return { answer: null, reasoning: null }
     }
 
-    log("INFO", "🔍 RESPOSTA BRUTA RECEBIDA:")
-    log("INFO", "📝 Conteúdo completo:", `"${ans}"`)
-    log("INFO", "📏 Tamanho:", ans.length, "caracteres")
+    log("INFO", "🧠 ANALISANDO RACIOCÍNIO DA IA:")
+    log("INFO", "📝 Raciocínio completo:", reasoning)
 
-    // Limpar a resposta
-    const cleaned = ans.trim()
-    log("INFO", "🧹 RESPOSTA LIMPA:", `"${cleaned}"`)
+    // Salvar o raciocínio completo
+    STATE.lastReasoning = reasoning
 
-    // Estratégias múltiplas para encontrar a letra - ORDEM IMPORTA!
+    // Estratégias para extrair a resposta final
     const strategies = [
       {
-        name: "Letra isolada exata (A-E)",
-        regex: /^([A-E])$/i,
+        name: "Resposta: X (formato padrão)",
+        regex: /Resposta:\s*([A-E])/i,
         priority: 1,
       },
       {
-        name: "Resposta: X ou Answer: X",
-        regex: /(?:resposta|answer|letra|alternativa)[\s:]*([A-E])/i,
+        name: "Alternativa correta é X",
+        regex: /(?:alternativa|resposta)\s+(?:correta|é)\s+(?:é\s+)?([A-E])/i,
         priority: 2,
       },
       {
-        name: "Letra com parênteses A)",
-        regex: /^([A-E])\)/i,
+        name: "Letra X) está correta",
+        regex: /(?:letra|alternativa)\s+([A-E])\)?\s+(?:está\s+)?(?:correta|é\s+a\s+resposta)/i,
         priority: 3,
       },
       {
-        name: "Letra no início da linha",
-        regex: /^([A-E])\b/im,
+        name: "Portanto X ou Logo X",
+        regex: /(?:portanto|logo|assim|então)[\s,]*(?:a\s+resposta\s+é\s+)?([A-E])/i,
         priority: 4,
       },
       {
-        name: "Última letra A-E encontrada",
+        name: "Última letra mencionada",
         regex: /\b([A-E])\b(?!.*\b[A-E]\b)/i,
         priority: 5,
-      },
-      {
-        name: "Primeira letra A-E encontrada",
-        regex: /\b([A-E])\b/i,
-        priority: 6,
       },
     ]
 
     // Testar cada estratégia
     for (const strategy of strategies) {
-      const match = cleaned.match(strategy.regex)
+      const match = reasoning.match(strategy.regex)
       if (match) {
         const letter = match[1].toUpperCase()
-        log("INFO", `✅ RESPOSTA ENCONTRADA: "${letter}"`)
-        log("INFO", `🎯 Estratégia usada: ${strategy.name} (prioridade ${strategy.priority})`)
-        log("INFO", `🔍 Regex: ${strategy.regex}`)
-        log("INFO", `📍 Match completo:`, match)
-        return letter
+        log("INFO", `✅ RESPOSTA EXTRAÍDA: "${letter}"`)
+        log("INFO", `🎯 Estratégia: ${strategy.name} (prioridade ${strategy.priority})`)
+        log("INFO", `🔍 Match:`, match[0])
+        return { answer: letter, reasoning: reasoning }
       } else {
         log("INFO", `❌ Estratégia "${strategy.name}" não funcionou`)
       }
     }
 
-    // Se chegou aqui, nenhuma estratégia funcionou
-    log("ERROR", "❌ NENHUMA RESPOSTA VÁLIDA ENCONTRADA!")
-    log("ERROR", "📝 Resposta original:", `"${ans}"`)
-    log("ERROR", "🧹 Resposta limpa:", `"${cleaned}"`)
-    log(
-      "ERROR",
-      "🔤 Caracteres individuais:",
-      cleaned.split("").map((c, i) => `${i}: "${c}" (${c.charCodeAt(0)})`),
-    )
+    // Se não encontrou, tentar extrair do final do texto
+    const lines = reasoning.split("\n").filter((line) => line.trim())
+    const lastLine = lines[lines.length - 1]
+    const lastLineMatch = lastLine.match(/([A-E])/i)
 
-    return null
+    if (lastLineMatch) {
+      const letter = lastLineMatch[1].toUpperCase()
+      log("INFO", `✅ RESPOSTA EXTRAÍDA DA ÚLTIMA LINHA: "${letter}"`)
+      log("INFO", `📝 Última linha: "${lastLine}"`)
+      return { answer: letter, reasoning: reasoning }
+    }
+
+    log("ERROR", "❌ NÃO FOI POSSÍVEL EXTRAIR RESPOSTA DO RACIOCÍNIO!")
+    log("ERROR", "📝 Raciocínio:", reasoning.substring(0, 500) + "...")
+    return { answer: null, reasoning: reasoning }
   }
 
   // Função para salvar no cache
@@ -530,6 +527,46 @@ javascript: (() => {
     log("INFO", "🔄 MODELO ALTERADO PARA:", newModel)
   }
 
+  // Função para mostrar raciocínio
+  function showReasoning() {
+    if (STATE.isRunning) return
+    if (STATE.lastReasoning) {
+      // Criar popup com o raciocínio
+      const popup = document.createElement("div")
+      popup.style.cssText = `
+        position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        background: rgba(16, 16, 24, 0.95); color: #E2E2FF; padding: 20px;
+        border-radius: 10px; max-width: 80vw; max-height: 80vh; overflow-y: auto;
+        z-index: 2147483648; border: 1px solid #333344; box-shadow: 0 8px 30px rgba(0,0,0,0.8);
+        font-family: 'JetBrains Mono', monospace; font-size: 14px; line-height: 1.5;
+      `
+      popup.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+          <h3 style="margin: 0; color: #C77DFF;">🧠 Raciocínio da IA</h3>
+          <button onclick="this.parentElement.parentElement.remove()" style="background: #F50057; color: white; border: none; border-radius: 5px; padding: 5px 10px; cursor: pointer;">✕</button>
+        </div>
+        <div style="white-space: pre-wrap; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; border-left: 4px solid #C77DFF;">
+          ${STATE.lastReasoning}
+        </div>
+      `
+      document.body.appendChild(popup)
+
+      STATE.ui.notify({
+        id: "reasoning_shown",
+        text: "🧠 Raciocínio Exibido",
+        detail: "Clique no X para fechar",
+        type: "info",
+      })
+    } else {
+      STATE.ui.notify({
+        id: "no_reasoning",
+        text: "❌ Sem Raciocínio",
+        detail: "Execute uma questão primeiro",
+        type: "warn",
+      })
+    }
+  }
+
   // Função para marcar como incorreta
   function markAsIncorrect() {
     if (STATE.isRunning || !STATE.lastCacheId) {
@@ -573,6 +610,7 @@ javascript: (() => {
     if (STATE.isRunning) return
     STATE.isRunning = true
     STATE.lastAnswer = null
+    STATE.lastReasoning = null
     applyPulse(null)
 
     const currentModel = CONFIG.MODELS[STATE.currentModelIndex]
@@ -580,8 +618,8 @@ javascript: (() => {
 
     STATE.ui.notify({
       id: "processing_status",
-      text: "Processando...",
-      detail: `Usando: ${currentModel.name}`,
+      text: "🧠 Analisando...",
+      detail: `IA está raciocinando com ${currentModel.name}`,
       type: "processing",
     })
 
@@ -591,15 +629,11 @@ javascript: (() => {
 
       const result = await withTimeout(queryApi(question, currentModel.id), CONFIG.API_TIMEOUT)
 
-      // Log DETALHADO da resposta bruta antes de formatar
-      log("INFO", "🔍 ANÁLISE DETALHADA DA RESPOSTA:")
-      log("INFO", "📥 Resposta bruta completa:", `"${result.response}"`)
-      log("INFO", "📏 Tamanho:", result.response?.length || 0, "caracteres")
-      log("INFO", "🔤 Tipo:", typeof result.response)
+      // Extrair resposta do raciocínio
+      log("INFO", "🧠 EXTRAINDO RESPOSTA DO RACIOCÍNIO:")
+      const { answer, reasoning } = extractAnswerFromReasoning(result.response)
 
-      const answer = formatResponse(result.response)
-
-      const icon = result.source === "database_cache" || result.source === "corrected_cache" ? "💾" : "⚡️"
+      const icon = result.source === "database_cache" || result.source === "corrected_cache" ? "💾" : "🧠"
       const modelName = result.model
         ? result.model
             .split("/")
@@ -609,15 +643,15 @@ javascript: (() => {
       const detail =
         result.source === "database_cache" || result.source === "corrected_cache"
           ? `Do cache (por ${result.details?.modelOrigin?.split("/").pop() || modelName})`
-          : `Respondido por ${modelName}`
+          : `Analisado por ${modelName}`
 
       log("INFO", "✅ PROCESSAMENTO CONCLUÍDO:")
       log("INFO", "🎯 Resposta final:", answer)
+      log("INFO", "🧠 Tem raciocínio:", !!reasoning)
       log("INFO", "🏷️ Source:", result.source)
       log("INFO", "🤖 Model:", modelName)
       log("INFO", "🖼️ Had images:", STATE.imageCount > 0)
       log("INFO", "🆔 Cache ID:", result.cacheId)
-      log("INFO", "📝 Raw response:", result.response)
 
       if (answer) {
         STATE.lastAnswer = answer
@@ -625,7 +659,7 @@ javascript: (() => {
         STATE.ui.notify({
           id: "processing_status",
           text: `${icon} Resposta: ${answer}`,
-          detail: successDetail,
+          detail: successDetail + " • [8] Ver raciocínio",
           type: "success",
         })
 
@@ -634,13 +668,12 @@ javascript: (() => {
           await saveToCache(STATE.lastQuestion, answer, currentModel.id, true)
         }
       } else {
-        log("ERROR", "❌ FORMATO DE RESPOSTA INVÁLIDO:")
-        log("ERROR", "📝 Resposta original:", result.response)
-        log("ERROR", "🔤 Tipo:", typeof result.response)
+        log("ERROR", "❌ NÃO FOI POSSÍVEL EXTRAIR RESPOSTA:")
+        log("ERROR", "📝 Raciocínio:", result.response)
         STATE.ui.notify({
           id: "processing_status",
-          text: "❌ Resposta Inválida",
-          detail: "Não foi possível extrair A-E",
+          text: "❌ Falha na Extração",
+          detail: "IA respondeu mas não consegui extrair A-E",
           type: "error",
         })
       }
@@ -693,6 +726,7 @@ javascript: (() => {
       5: kill,
       6: markAsIncorrect,
       7: promptCorrection,
+      8: showReasoning,
     }
     actions[e.key]?.(e.preventDefault())
     if (e.key === "Escape") STATE.ui.toggleMenu(false)
@@ -718,17 +752,17 @@ javascript: (() => {
     container.style.cssText = `position:fixed; bottom:20px; right:20px; z-index:2147483647; font-family:${C.font}; animation:hck-fade-in .4s ease-out;`
 
     const menu = document.createElement("div")
-    menu.style.cssText = `width:300px; background:${C.bg}; backdrop-filter:blur(10px); color:${C.text}; padding:10px; border-radius:10px; border:1px solid ${C.border}; box-shadow:${C.shadow}; display:none; flex-direction:column; gap:8px; transition: all .3s ease-out; position:absolute; bottom:calc(100% + 10px); right:0; opacity:0; transform-origin: bottom right;`
+    menu.style.cssText = `width:320px; background:${C.bg}; backdrop-filter:blur(10px); color:${C.text}; padding:10px; border-radius:10px; border:1px solid ${C.border}; box-shadow:${C.shadow}; display:none; flex-direction:column; gap:8px; transition: all .3s ease-out; position:absolute; bottom:calc(100% + 10px); right:0; opacity:0; transform-origin: bottom right;`
 
     const titleBar = document.createElement("div")
-    titleBar.innerHTML = `<div style="font-weight:600; font-size:14px; background:${C.grad}; -webkit-background-clip:text; -webkit-text-fill-color:transparent;">HCK - PROVA PAULISTA V2</div><div style="font-size:9px; color:${C.text2}; align-self:flex-end;">v${SCRIPT_VERSION}</div>`
+    titleBar.innerHTML = `<div style="font-weight:600; font-size:14px; background:${C.grad}; -webkit-background-clip:text; -webkit-text-fill-color:transparent;">HCK - PROVA PAULISTA V3</div><div style="font-size:9px; color:${C.text2}; align-self:flex-end;">v${SCRIPT_VERSION}</div>`
     titleBar.style.cssText = `display:flex; justify-content:space-between; align-items:center;`
 
     const modelDisplay = document.createElement("div")
     modelDisplay.style.cssText = `font-size:11px; color:${C.text2}; text-align:center; background:rgba(0,0,0,0.2); padding: 5px; border-radius: 6px; border: 1px solid ${C.border}; margin-top: 8px;`
 
     const shortcuts = document.createElement("div")
-    shortcuts.innerHTML = `<div style="display:grid; grid-template-columns:auto 1fr; gap:5px 12px; font-size:11px; color:${C.text2}; margin-top:8px; padding-top:8px; border-top: 1px solid ${C.border};"><b style="color:${C.text};">[1]</b>Menu <b style="color:${C.text};">[2]</b>Executar <b style="color:${C.text};">[3]</b>Marcar <b style="color:${C.text};">[4]</b>Mudar Modelo <b style="color:${C.text};">[5]</b>Sair <b style="color:${C.text};">[6]</b>Incorreta <b style="color:${C.text};">[7]</b>Corrigir</div>`
+    shortcuts.innerHTML = `<div style="display:grid; grid-template-columns:auto 1fr; gap:5px 12px; font-size:11px; color:${C.text2}; margin-top:8px; padding-top:8px; border-top: 1px solid ${C.border};"><b style="color:${C.text};">[1]</b>Menu <b style="color:${C.text};">[2]</b>Analisar <b style="color:${C.text};">[3]</b>Marcar <b style="color:${C.text};">[4]</b>Modelo <b style="color:${C.text};">[5]</b>Sair <b style="color:${C.text};">[6]</b>Incorreta <b style="color:${C.text};">[7]</b>Corrigir <b style="color:${C.text};">[8]</b>Raciocínio</div>`
 
     const credits = document.createElement("div")
     credits.innerHTML = `by <b style="background:${C.grad};-webkit-background-clip:text;-webkit-text-fill-color:transparent;">Hackermoon1</b> & <b style="background:${C.grad};-webkit-background-clip:text;-webkit-text-fill-color:transparent;">Dontbrazz</b>`
@@ -796,7 +830,7 @@ javascript: (() => {
         marking: C.pulse,
       }[type]
       const n = document.createElement("div")
-      n.style.cssText = `width:300px; background:rgba(22, 22, 30, 0.9); backdrop-filter:blur(10px); color:${C.text}; padding:12px 16px; border-radius:10px; box-shadow:${C.shadow}; display:flex; flex-direction:column; gap:4px; opacity:0; transform:translateX(20px); transition:all .4s cubic-bezier(0.2, 1, 0.4, 1); border-left:4px solid ${color}; cursor:pointer; font-size:14px; overflow:hidden;`
+      n.style.cssText = `width:320px; background:rgba(22, 22, 30, 0.9); backdrop-filter:blur(10px); color:${C.text}; padding:12px 16px; border-radius:10px; box-shadow:${C.shadow}; display:flex; flex-direction:column; gap:4px; opacity:0; transform:translateX(20px); transition:all .4s cubic-bezier(0.2, 1, 0.4, 1); border-left:4px solid ${color}; cursor:pointer; font-size:14px; overflow:hidden;`
       n.innerHTML = `<strong style="color:${color};">${text}</strong>${detail ? `<span style="font-size:0.9em;color:${C.text2};display:block;">${detail}</span>` : ""}<div class="hck-progress-bar" style="position:absolute; bottom:0; left:0; height:2px; background:${color}; opacity:0.6;"></div>`
 
       const hide = () => {
@@ -833,9 +867,13 @@ javascript: (() => {
   try {
     STATE.ui = setupUI()
     document.addEventListener("keydown", handleKeys, true)
-    log("INFO", `----- HCK - PROVA PAULISTA V2 (v${SCRIPT_VERSION}) Activated -----`)
+    log("INFO", `----- HCK - PROVA PAULISTA V3 (v${SCRIPT_VERSION}) Activated -----`)
     STATE.ui.updateModelDisplay(CONFIG.MODELS[STATE.currentModelIndex].name)
-    STATE.ui.notify({ text: "HCK Ativado", detail: "Pressione [1] para ver o menu", type: "success" })
+    STATE.ui.notify({
+      text: "🧠 HCK V3 Ativado",
+      detail: "Agora a IA raciocina! Pressione [1] para menu",
+      type: "success",
+    })
   } catch (e) {
     console.error("HCK Init Fail:", e)
   }
