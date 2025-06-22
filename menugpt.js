@@ -9,7 +9,7 @@ javascript: (function() {
         return;
     }
     
-    const SCRIPT_VERSION = '12.1.0-notif-fix';
+    const SCRIPT_VERSION = '12.2.0-vision-debug';
     const CONFIG = {
         API_ENDPOINT: 'https://v0-openrouter-ai-endpoint.vercel.app/api/chat-selector',
         MODELS: [
@@ -21,7 +21,7 @@ javascript: (function() {
         API_TIMEOUT: 30000,
         NOTIFICATION_TIMEOUT: 4000
     };
-    const STATE = { lastAnswer: null, isRunning: false, currentModelIndex: 0, ui: {}, activeNotifications: {} };
+    const STATE = { lastAnswer: null, isRunning: false, currentModelIndex: 0, ui: {}, activeNotifications: {}, imageCount: 0 };
 
     const log = (level, ...args) => (console[level.toLowerCase()] || console.log)(`[HCK]`, ...args);
     const withTimeout = (promise, ms) => Promise.race([promise, new Promise((_, rj) => setTimeout(() => rj(new Error(`Timeout ${ms}ms`)), ms))]);
@@ -31,59 +31,218 @@ javascript: (function() {
         if (!node || (node.nodeType === Node.ELEMENT_NODE && ((node.offsetParent === null && node.style.display !== 'flex') || node.style.display === 'none'))) return '';
         if (node.nodeType === Node.TEXT_NODE) return node.nodeValue;
         const tagName = node.tagName?.toUpperCase();
+        
         if (tagName === 'IMG') {
             try {
-                const url = new URL(node.src || node.dataset.src, window.location.href).toString();
-                if (!/(_logo|\.svg|icon|button|banner|avatar|profile|thumb|sprite|captcha|loading|spinner|placeholder|background|pattern|texture|favicon|asset|static|decorator|spacer|dummy|transparent|1x1|blank\.gif|clear\.gif|ad\.|advert|tracking|pixel|beacon)/i.test(url)) return ` [IMAGEM]: ${url} `;
-            } catch (e) {}
-            return '';
+                const src = node.src || node.dataset.src || node.getAttribute('data-src');
+                log('INFO', '🖼️ IMAGEM ENCONTRADA:', {
+                    src: src,
+                    alt: node.alt,
+                    width: node.width || node.offsetWidth,
+                    height: node.height || node.offsetHeight,
+                    visible: node.offsetParent !== null,
+                    complete: node.complete,
+                    naturalWidth: node.naturalWidth,
+                    naturalHeight: node.naturalHeight
+                });
+
+                if (!src) {
+                    log('WARN', '⚠️ IMAGEM SEM SRC:', node);
+                    return '';
+                }
+
+                const url = new URL(src, window.location.href).toString();
+                
+                // Filtros para imagens irrelevantes
+                const isRelevant = !/(_logo|\.svg|icon|button|banner|avatar|profile|thumb|sprite|captcha|loading|spinner|placeholder|background|pattern|texture|favicon|asset|static|decorator|spacer|dummy|transparent|1x1|blank\.gif|clear\.gif|ad\.|advert|tracking|pixel|beacon)/i.test(url);
+                
+                if (isRelevant) {
+                    STATE.imageCount++;
+                    log('INFO', `✅ IMAGEM RELEVANTE #${STATE.imageCount}:`, {
+                        url: url,
+                        alt: node.alt,
+                        dimensions: `${node.naturalWidth || node.width}x${node.naturalHeight || node.height}`
+                    });
+                    return ` [IMAGEM]: ${url} `;
+                } else {
+                    log('INFO', '❌ IMAGEM FILTRADA (irrelevante):', url);
+                    return '';
+                }
+            } catch (e) {
+                log('ERROR', '❌ ERRO AO PROCESSAR IMAGEM:', e, node);
+                return '';
+            }
         }
+        
         if (node.matches && node.matches('mjx-container, .MathJax, .katex, math')) {
             const latex = node.getAttribute('aria-label') || node.dataset.latex || node.querySelector('annotation[encoding*="tex"]')?.textContent;
-            if (latex?.trim()) return ` $${latex.trim()}$ `;
+            if (latex?.trim()) {
+                log('INFO', '📐 FÓRMULA MATEMÁTICA ENCONTRADA:', latex.trim());
+                return ` $${latex.trim()}$ `;
+            }
         }
+        
         let inner = '';
-        if (node.hasChildNodes()) { for (const child of node.childNodes) { inner += getContent(child); } }
+        if (node.hasChildNodes()) { 
+            for (const child of node.childNodes) { 
+                inner += getContent(child); 
+            } 
+        }
         if (['P', 'DIV', 'H1', 'H2', 'H3', 'LI', 'BLOCKQUOTE', 'BR', 'TR'].includes(tagName)) return inner + '\n';
         return inner;
     }
 
     function extractQuestion() {
+        log('INFO', '🔍 INICIANDO EXTRAÇÃO DE QUESTÃO...');
+        STATE.imageCount = 0; // Reset contador de imagens
+        
         let card = null;
         const selectors = 'div.MuiPaper-root, article[class*="question"], section[class*="assessment"], div[class*="questao"]';
-        for (const c of document.querySelectorAll(selectors)) { if (c.closest('#'+HCK_ID)) continue; if (c.querySelector('div[role="radiogroup"], ul[class*="option"], ol[class*="choice"]')) { card = c; break; } }
-        if (!card) card = document.body;
+        
+        for (const c of document.querySelectorAll(selectors)) { 
+            if (c.closest('#'+HCK_ID)) continue; 
+            if (c.querySelector('div[role="radiogroup"], ul[class*="option"], ol[class*="choice"]')) { 
+                card = c; 
+                log('INFO', '📋 CARD DA QUESTÃO ENCONTRADO:', c.className);
+                break; 
+            } 
+        }
+        
+        if (!card) {
+            card = document.body;
+            log('WARN', '⚠️ USANDO DOCUMENT.BODY COMO FALLBACK');
+        }
+
+        // Verificar imagens no card antes da extração
+        const images = card.querySelectorAll('img');
+        log('INFO', `🖼️ TOTAL DE IMAGENS NO CARD: ${images.length}`);
+        images.forEach((img, index) => {
+            log('INFO', `🖼️ IMAGEM ${index + 1}:`, {
+                src: img.src,
+                alt: img.alt,
+                visible: img.offsetParent !== null,
+                loaded: img.complete && img.naturalWidth > 0
+            });
+        });
+
         let statement = '';
         const statementEl = card.querySelector('.ql-editor, div[class*="enunciado"], .question-statement, .texto-base');
-        if (statementEl && !statementEl.closest('div[role="radiogroup"]')) { statement = getContent(statementEl);
-        } else { for (const child of card.childNodes) { if (child.nodeType === Node.ELEMENT_NODE && (child.matches('div[role="radiogroup"], ul[class*="option"], ol[class*="choice"]') || child.querySelector('div[role="radiogroup"]'))) break; statement += getContent(child); } }
+        
+        if (statementEl && !statementEl.closest('div[role="radiogroup"]')) { 
+            log('INFO', '📝 ENUNCIADO ENCONTRADO EM ELEMENTO ESPECÍFICO');
+            statement = getContent(statementEl);
+        } else { 
+            log('INFO', '📝 EXTRAINDO ENUNCIADO DE TODOS OS FILHOS DO CARD');
+            for (const child of card.childNodes) { 
+                if (child.nodeType === Node.ELEMENT_NODE && (child.matches('div[role="radiogroup"], ul[class*="option"], ol[class*="choice"]') || child.querySelector('div[role="radiogroup"]'))) {
+                    log('INFO', '🛑 PARANDO EXTRAÇÃO - ENCONTROU ALTERNATIVAS');
+                    break; 
+                }
+                statement += getContent(child); 
+            } 
+        }
+        
         statement = sanitize(statement);
+        log('INFO', '📝 ENUNCIADO EXTRAÍDO:', statement.substring(0, 200) + '...');
+        
         const alternatives = [];
         const radioGroup = card.querySelector('div[role="radiogroup"], ul[class*="option"], ol[class*="choice"]');
+        
         if (radioGroup) {
+            log('INFO', '🔘 GRUPO DE ALTERNATIVAS ENCONTRADO');
             const items = Array.from(radioGroup.children).filter(el => el.matches('div, label, li'));
-            items.forEach((item) => {
+            log('INFO', `🔘 TOTAL DE ITENS DE ALTERNATIVAS: ${items.length}`);
+            
+            items.forEach((item, index) => {
                 if (alternatives.length >= 5) return;
                 const letter = String.fromCharCode(65 + alternatives.length);
                 let content = sanitize(getContent(item)).replace(/^[A-Ea-e][\)\.]\s*/, '').trim();
-                if (content) alternatives.push(`${letter}) ${content}`);
+                if (content) {
+                    alternatives.push(`${letter}) ${content}`);
+                    log('INFO', `🔘 ALTERNATIVA ${letter} EXTRAÍDA:`, content.substring(0, 100) + '...');
+                }
+            });
+        } else {
+            log('WARN', '⚠️ NENHUM GRUPO DE ALTERNATIVAS ENCONTRADO');
+        }
+        
+        // Log final da extração
+        log('INFO', '📊 RESUMO DA EXTRAÇÃO:', {
+            enunciadoLength: statement.length,
+            alternativasCount: alternatives.length,
+            imagensEncontradas: STATE.imageCount,
+            temConteudoSuficiente: statement.length >= 5 || alternatives.some(a => a.length >= 10)
+        });
+
+        if (statement.length < 5 && alternatives.every(a => a.length < 10)) {
+            log('ERROR', '❌ FALHA NA EXTRAÇÃO: CONTEÚDO INSUFICIENTE');
+            return "Falha na extração: conteúdo insuficiente.";
+        }
+
+        const finalQuestion = `--- Enunciado ---\n${statement || "(Vazio)"}\n\n--- Alternativas ---\n${alternatives.join('\n') || "(Nenhuma)"}`.replace(/\n{3,}/g, '\n\n');
+        
+        // Log da questão final (apenas primeiros 500 chars para não poluir)
+        log('INFO', '✅ QUESTÃO FINAL EXTRAÍDA:', finalQuestion.substring(0, 500) + '...');
+        
+        if (STATE.imageCount > 0) {
+            log('INFO', `🖼️ QUESTÃO COM VISÃO: ${STATE.imageCount} imagem(ns) incluída(s)`);
+            STATE.ui.notify({ 
+                id: 'vision_detected', 
+                text: `🖼️ Visão Detectada`, 
+                detail: `${STATE.imageCount} imagem(ns) encontrada(s)`, 
+                type: 'info' 
             });
         }
-        if (statement.length < 5 && alternatives.every(a => a.length < 10)) return "Falha na extração: conteúdo insuficiente.";
-        return `--- Enunciado ---\n${statement || "(Vazio)"}\n\n--- Alternativas ---\n${alternatives.join('\n') || "(Nenhuma)"}`.replace(/\n{3,}/g, '\n\n');
+
+        return finalQuestion;
     }
 
     async function queryApi(text, modelId) {
+        log('INFO', '🚀 ENVIANDO PARA API:', {
+            modelId: modelId,
+            textLength: text.length,
+            hasImages: text.includes('[IMAGEM]'),
+            imageCount: (text.match(/\[IMAGEM\]/g) || []).length
+        });
+
         const payload = { messages: [{ role: "user", content: text }], modelId: modelId };
-        const res = await fetch(CONFIG.API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data?.message || `Erro HTTP ${res.status}`);
-        if (data.response) return data;
-        throw new Error("API retornou resposta inválida.");
+        
+        try {
+            const res = await fetch(CONFIG.API_ENDPOINT, { 
+                method: 'POST', 
+                headers: { 'Content-Type': 'application/json' }, 
+                body: JSON.stringify(payload) 
+            });
+            
+            const data = await res.json();
+            
+            log('INFO', '📥 RESPOSTA DA API:', {
+                status: res.status,
+                ok: res.ok,
+                response: data.response,
+                source: data.source,
+                model: data.model
+            });
+
+            if (!res.ok) {
+                log('ERROR', '❌ ERRO HTTP DA API:', data);
+                throw new Error(data?.message || `Erro HTTP ${res.status}`);
+            }
+            
+            if (data.response) return data;
+            
+            log('ERROR', '❌ API RETORNOU RESPOSTA INVÁLIDA:', data);
+            throw new Error("API retornou resposta inválida.");
+            
+        } catch (error) {
+            log('ERROR', '❌ ERRO NA REQUISIÇÃO:', error);
+            throw error;
+        }
     }
 
     const formatResponse = (ans) => typeof ans === 'string' ? (ans.trim().match(/\b([A-E])\b/i)?.[1] || ans.trim().match(/^[A-E]$/i)?.[0])?.toUpperCase() : null;
     const PULSE_CLASS = 'hck-pulse-visual';
+    
     function applyPulse(letter) {
         document.querySelectorAll('.'+PULSE_CLASS).forEach(e => e.classList.remove(PULSE_CLASS));
         if (!letter) return;
@@ -98,6 +257,7 @@ javascript: (function() {
         const newModel = CONFIG.MODELS[STATE.currentModelIndex];
         STATE.ui.updateModelDisplay(newModel.name);
         STATE.ui.notify({ id: 'model_change', text: "Modelo Alterado", detail: newModel.name, type: 'info' });
+        log('INFO', '🔄 MODELO ALTERADO PARA:', newModel);
     }
 
     async function run() {
@@ -105,33 +265,91 @@ javascript: (function() {
         STATE.isRunning = true;
         STATE.lastAnswer = null;
         applyPulse(null);
+        
         const currentModel = CONFIG.MODELS[STATE.currentModelIndex];
+        log('INFO', '▶️ INICIANDO EXECUÇÃO COM MODELO:', currentModel);
+        
         STATE.ui.notify({ id: 'processing_status', text: "Processando...", detail: `Usando: ${currentModel.name}`, type: 'processing' });
+        
         try {
             const question = extractQuestion();
             if (question.startsWith("Falha")) throw new Error(question);
+            
             const result = await withTimeout(queryApi(question, currentModel.id), CONFIG.API_TIMEOUT);
             const answer = formatResponse(result.response);
-            const icon = result.source === 'database_cache' ? '💾' : '⚡️';
+            
+            const icon = result.source === 'database_cache' || result.source === 'corrected_cache' ? '💾' : '⚡️';
             const modelName = result.model ? result.model.split('/').pop().replace(/-latest$/, '') : 'IA';
-            const detail = result.source === 'database_cache' ? `Do cache (por ${result.details?.modelOrigin?.split('/').pop() || modelName})` : `Respondido por ${modelName}`;
+            const detail = result.source === 'database_cache' || result.source === 'corrected_cache' ? 
+                `Do cache (por ${result.details?.modelOrigin?.split('/').pop() || modelName})` : 
+                `Respondido por ${modelName}`;
+            
+            log('INFO', '✅ PROCESSAMENTO CONCLUÍDO:', {
+                answer: answer,
+                source: result.source,
+                model: modelName,
+                hadImages: STATE.imageCount > 0
+            });
+
             if (answer) {
                 STATE.lastAnswer = answer;
-                STATE.ui.notify({ id: 'processing_status', text: `${icon} Resposta: ${answer}`, detail: detail, type: 'success' });
+                const successDetail = STATE.imageCount > 0 ? 
+                    `${detail} • ${STATE.imageCount} imagem(ns)` : detail;
+                STATE.ui.notify({ 
+                    id: 'processing_status', 
+                    text: `${icon} Resposta: ${answer}`, 
+                    detail: successDetail, 
+                    type: 'success' 
+                });
             } else {
+                log('ERROR', '❌ FORMATO DE RESPOSTA INVÁLIDO:', result.response);
                 throw new Error("Formato de resposta inválido.");
             }
         } catch (error) {
-            log('ERROR', "Falha no ciclo:", error);
-            STATE.ui.notify({ id: 'processing_status', text: "Ocorreu um Erro", detail: error.message.substring(0, 40), type: 'error' });
+            log('ERROR', "❌ FALHA NO CICLO:", error);
+            STATE.ui.notify({ 
+                id: 'processing_status', 
+                text: "Ocorreu um Erro", 
+                detail: error.message.substring(0, 40), 
+                type: 'error' 
+            });
         } finally {
             STATE.isRunning = false;
         }
     }
 
-    function showAnswer() { if (STATE.isRunning) return; if (STATE.lastAnswer) { applyPulse(STATE.lastAnswer); STATE.ui.notify({ id: 'marking_status', text: `Mostrando Resposta: ${STATE.lastAnswer}`, type: 'marking' }); STATE.lastAnswer = null; } else { STATE.ui.notify({ id: 'marking_status', text: "Nenhuma resposta para mostrar", detail: "Use [2] para executar.", type: 'warn' }); } }
-    function kill() { document.removeEventListener('keydown', handleKeys, true); document.getElementById(HCK_ID)?.remove(); }
-    function handleKeys(e) { if (e.target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || e.repeat) return; const actions = {'1':STATE.ui.toggleMenu, '2':run, '3':showAnswer, '4':cycleModel, '5':kill}; actions[e.key]?.(e.preventDefault()); if (e.key === 'Escape') STATE.ui.toggleMenu(false); }
+    function showAnswer() { 
+        if (STATE.isRunning) return; 
+        if (STATE.lastAnswer) { 
+            applyPulse(STATE.lastAnswer); 
+            STATE.ui.notify({ 
+                id: 'marking_status', 
+                text: `Mostrando Resposta: ${STATE.lastAnswer}`, 
+                type: 'marking' 
+            }); 
+            STATE.lastAnswer = null; 
+        } else { 
+            STATE.ui.notify({ 
+                id: 'marking_status', 
+                text: "Nenhuma resposta para mostrar", 
+                detail: "Use [2] para executar.", 
+                type: 'warn' 
+            }); 
+        } 
+    }
+    
+    function kill() { 
+        log('INFO', '🛑 ENCERRANDO HCK...');
+        document.removeEventListener('keydown', handleKeys, true); 
+        document.getElementById(HCK_ID)?.remove(); 
+    }
+    
+    function handleKeys(e) { 
+        if (e.target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || e.repeat) return; 
+        const actions = {'1':STATE.ui.toggleMenu, '2':run, '3':showAnswer, '4':cycleModel, '5':kill}; 
+        actions[e.key]?.(e.preventDefault()); 
+        if (e.key === 'Escape') STATE.ui.toggleMenu(false); 
+    }
 
     function setupUI() {
         const C = { font: "'JetBrains Mono', monospace", bg: 'rgba(16, 16, 24, 0.9)', text: '#E2E2FF', text2: '#8890B3', grad: 'linear-gradient(90deg, #C77DFF, #00D0FF)', pulse: '#F50057', border: '#333344', shadow: '0 8px 30px rgba(0,0,0,0.5)' };
@@ -231,5 +449,7 @@ javascript: (function() {
         log('INFO', `----- HCK - PROVA PAULISTA V2 (v${SCRIPT_VERSION}) Activated -----`);
         STATE.ui.updateModelDisplay(CONFIG.MODELS[STATE.currentModelIndex].name);
         STATE.ui.notify({text:"HCK Ativado", detail:"Pressione [1] para ver o menu", type:'success'});
-    } catch (e) { console.error('HCK Init Fail:', e); }
+    } catch (e) { 
+        console.error('HCK Init Fail:', e); 
+    }
 })();
