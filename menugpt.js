@@ -13,7 +13,7 @@ javascript: (() => {
 
   const SCRIPT_VERSION = "13.0.0-multi-api"
   const CONFIG = {
-    API_ENDPOINT: "https://v0-aiml-api-setup.vercel.app/api/chat-selector",
+    API_ENDPOINT: "https://v0-openrouter-ai-endpoint.vercel.app/",
     MODELS: [
       { id: "gpt-4o-mini", name: "GPT-4O Mini (Rápido)" },
       { id: "gemini-1.5-flash", name: "Gemini 1.5 (Geral)" },
