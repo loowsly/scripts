@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+  <head><title>Meu script</title></head>
+  <body>
+    <pre id="code"></pre>
+    <script src="./menugpt.js"></script>
+    <script>
+      fetch('./menugpt.js')
+        .then(res => res.text())
+        .then(code => document.getElementById('code').innerText = code)
+    </script>
+  </body>
+</html>
