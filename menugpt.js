@@ -11,15 +11,15 @@ javascript: (() => {
     return
   }
 
-  const SCRIPT_VERSION = "12.6.0-complete-question"
+  const SCRIPT_VERSION = "12.7.0-debug-response"
   const CONFIG = {
     API_ENDPOINT: "https://v0-openrouter-ai-endpoint.vercel.app/api/chat-selector",
     CACHE_ENDPOINT: "https://v0-openrouter-ai-endpoint.vercel.app/api/cache",
     MODELS: [
+      { id: "gpt-4o-mini", name: "GPT-4O Mini (Rápido)" },
       { id: "gemini-1.5-flash", name: "Gemini 1.5 (Geral/Visão)" },
-      { id: "meta-llama/Llama-3.3-70B-Instruct-Turbo", name: "Llama 3.3 (Humanas)" },
-      { id: "deepseek-reasoner", name: "DeepSeek-R1 (Exatas)" },
-      { id: "deepseek-chat", name: "DeepSeek-V3 (Rápido)" },
+      { id: "deepseek-chat", name: "DeepSeek V3 (Eficiente)" },
+      { id: "claude-3.5-sonnet", name: "Claude 3.5 (Inteligente)" },
     ],
     API_TIMEOUT: 30000,
     NOTIFICATION_TIMEOUT: 4000,
@@ -47,39 +47,80 @@ javascript: (() => {
           .trim()
       : ""
 
-  // Função melhorada para extrair resposta
+  // Função MUITO melhorada para extrair resposta
   const formatResponse = (ans) => {
-    if (typeof ans !== "string") return null
+    if (typeof ans !== "string") {
+      log("ERROR", "❌ RESPOSTA NÃO É STRING:", typeof ans, ans)
+      return null
+    }
 
-    log("INFO", "🔍 FORMATANDO RESPOSTA:", ans)
+    log("INFO", "🔍 RESPOSTA BRUTA RECEBIDA:")
+    log("INFO", "📝 Conteúdo completo:", `"${ans}"`)
+    log("INFO", "📏 Tamanho:", ans.length, "caracteres")
 
     // Limpar a resposta
     const cleaned = ans.trim()
+    log("INFO", "🧹 RESPOSTA LIMPA:", `"${cleaned}"`)
 
-    // Estratégias múltiplas para encontrar a letra
+    // Estratégias múltiplas para encontrar a letra - ORDEM IMPORTA!
     const strategies = [
-      // 1. Procurar por "Resposta: X" ou "Answer: X"
-      /(?:resposta|answer|letra|alternativa)[\s:]*([A-E])/i,
-      // 2. Procurar por letra isolada no final
-      /\b([A-E])\b(?!.*[A-E])/i,
-      // 3. Procurar por letra no início da linha
-      /^([A-E])\b/im,
-      // 4. Procurar por "A)" "B)" etc
-      /\b([A-E])\)/,
-      // 5. Procurar qualquer letra A-E
-      /\b([A-E])\b/i,
+      {
+        name: "Letra isolada exata (A-E)",
+        regex: /^([A-E])$/i,
+        priority: 1,
+      },
+      {
+        name: "Resposta: X ou Answer: X",
+        regex: /(?:resposta|answer|letra|alternativa)[\s:]*([A-E])/i,
+        priority: 2,
+      },
+      {
+        name: "Letra com parênteses A)",
+        regex: /^([A-E])\)/i,
+        priority: 3,
+      },
+      {
+        name: "Letra no início da linha",
+        regex: /^([A-E])\b/im,
+        priority: 4,
+      },
+      {
+        name: "Última letra A-E encontrada",
+        regex: /\b([A-E])\b(?!.*\b[A-E]\b)/i,
+        priority: 5,
+      },
+      {
+        name: "Primeira letra A-E encontrada",
+        regex: /\b([A-E])\b/i,
+        priority: 6,
+      },
     ]
 
+    // Testar cada estratégia
     for (const strategy of strategies) {
-      const match = cleaned.match(strategy)
+      const match = cleaned.match(strategy.regex)
       if (match) {
         const letter = match[1].toUpperCase()
-        log("INFO", `✅ RESPOSTA ENCONTRADA: ${letter} (estratégia: ${strategy})`)
+        log("INFO", `✅ RESPOSTA ENCONTRADA: "${letter}"`)
+        log("INFO", `🎯 Estratégia usada: ${strategy.name} (prioridade ${strategy.priority})`)
+        log("INFO", `🔍 Regex: ${strategy.regex}`)
+        log("INFO", `📍 Match completo:`, match)
         return letter
+      } else {
+        log("INFO", `❌ Estratégia "${strategy.name}" não funcionou`)
       }
     }
 
-    log("WARN", "⚠️ NENHUMA RESPOSTA VÁLIDA ENCONTRADA:", cleaned)
+    // Se chegou aqui, nenhuma estratégia funcionou
+    log("ERROR", "❌ NENHUMA RESPOSTA VÁLIDA ENCONTRADA!")
+    log("ERROR", "📝 Resposta original:", `"${ans}"`)
+    log("ERROR", "🧹 Resposta limpa:", `"${cleaned}"`)
+    log(
+      "ERROR",
+      "🔤 Caracteres individuais:",
+      cleaned.split("").map((c, i) => `${i}: "${c}" (${c.charCodeAt(0)})`),
+    )
+
     return null
   }
 
@@ -402,7 +443,8 @@ javascript: (() => {
     STATE.lastQuestion = finalQuestion
 
     // Log da questão final (primeiros 800 chars para ver mais conteúdo)
-    log("INFO", "✅ QUESTÃO FINAL EXTRAÍDA:", finalQuestion.substring(0, 800) + "...")
+    log("INFO", "✅ QUESTÃO FINAL EXTRAÍDA:")
+    log("INFO", finalQuestion.substring(0, 1000) + "...")
 
     if (STATE.imageCount > 0) {
       log("INFO", `🖼️ QUESTÃO COM VISÃO: ${STATE.imageCount} imagem(ns) incluída(s)`)
@@ -418,12 +460,11 @@ javascript: (() => {
   }
 
   async function queryApi(text, modelId) {
-    log("INFO", "🚀 ENVIANDO PARA API:", {
-      modelId: modelId,
-      textLength: text.length,
-      hasImages: text.includes("[IMAGEM]"),
-      imageCount: (text.match(/\[IMAGEM\]/g) || []).length,
-    })
+    log("INFO", "🚀 ENVIANDO PARA API:")
+    log("INFO", "📝 Modelo:", modelId)
+    log("INFO", "📏 Tamanho do texto:", text.length, "caracteres")
+    log("INFO", "🖼️ Tem imagens:", text.includes("[IMAGEM]"))
+    log("INFO", "🔢 Quantidade de imagens:", (text.match(/\[IMAGEM\]/g) || []).length)
 
     const payload = { messages: [{ role: "user", content: text }], modelId: modelId }
 
@@ -436,14 +477,14 @@ javascript: (() => {
 
       const data = await res.json()
 
-      log("INFO", "📥 RESPOSTA DA API:", {
-        status: res.status,
-        ok: res.ok,
-        response: data.response,
-        source: data.source,
-        model: data.model,
-        cacheId: data.cacheId,
-      })
+      log("INFO", "📥 RESPOSTA COMPLETA DA API:")
+      log("INFO", "🌐 Status:", res.status)
+      log("INFO", "✅ OK:", res.ok)
+      log("INFO", "📝 Response:", data.response)
+      log("INFO", "🏷️ Source:", data.source)
+      log("INFO", "🤖 Model:", data.model)
+      log("INFO", "🆔 Cache ID:", data.cacheId)
+      log("INFO", "📊 Details:", data.details)
 
       if (!res.ok) {
         log("ERROR", "❌ ERRO HTTP DA API:", data)
@@ -550,8 +591,11 @@ javascript: (() => {
 
       const result = await withTimeout(queryApi(question, currentModel.id), CONFIG.API_TIMEOUT)
 
-      // Log da resposta bruta antes de formatar
-      log("INFO", "📥 RESPOSTA BRUTA DA API:", result.response)
+      // Log DETALHADO da resposta bruta antes de formatar
+      log("INFO", "🔍 ANÁLISE DETALHADA DA RESPOSTA:")
+      log("INFO", "📥 Resposta bruta completa:", `"${result.response}"`)
+      log("INFO", "📏 Tamanho:", result.response?.length || 0, "caracteres")
+      log("INFO", "🔤 Tipo:", typeof result.response)
 
       const answer = formatResponse(result.response)
 
@@ -567,14 +611,13 @@ javascript: (() => {
           ? `Do cache (por ${result.details?.modelOrigin?.split("/").pop() || modelName})`
           : `Respondido por ${modelName}`
 
-      log("INFO", "✅ PROCESSAMENTO CONCLUÍDO:", {
-        answer: answer,
-        source: result.source,
-        model: modelName,
-        hadImages: STATE.imageCount > 0,
-        cacheId: result.cacheId,
-        rawResponse: result.response,
-      })
+      log("INFO", "✅ PROCESSAMENTO CONCLUÍDO:")
+      log("INFO", "🎯 Resposta final:", answer)
+      log("INFO", "🏷️ Source:", result.source)
+      log("INFO", "🤖 Model:", modelName)
+      log("INFO", "🖼️ Had images:", STATE.imageCount > 0)
+      log("INFO", "🆔 Cache ID:", result.cacheId)
+      log("INFO", "📝 Raw response:", result.response)
 
       if (answer) {
         STATE.lastAnswer = answer
@@ -591,7 +634,9 @@ javascript: (() => {
           await saveToCache(STATE.lastQuestion, answer, currentModel.id, true)
         }
       } else {
-        log("ERROR", "❌ FORMATO DE RESPOSTA INVÁLIDO:", result.response)
+        log("ERROR", "❌ FORMATO DE RESPOSTA INVÁLIDO:")
+        log("ERROR", "📝 Resposta original:", result.response)
+        log("ERROR", "🔤 Tipo:", typeof result.response)
         STATE.ui.notify({
           id: "processing_status",
           text: "❌ Resposta Inválida",
